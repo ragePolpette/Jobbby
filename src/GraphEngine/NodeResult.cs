@@ -2,7 +2,7 @@ namespace GraphEngine;
 
 /// <summary>
 /// Output produced by a node after execution. Updates are merged into the
-/// <see cref="GraphState"/> by the <see cref="GraphRunner"/> after the node returns,
+/// <see cref="GraphState"/> by the <see cref="GraphRun"/> after the node returns,
 /// keeping node implementations free of direct state mutation.
 /// </summary>
 public sealed class NodeResult

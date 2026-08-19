@@ -5,7 +5,7 @@ namespace Example;
 /// <summary>
 /// Minimal validation graph: two nodes, "Ping" and "Pong", pass control back and forth.
 /// Each Ping -> Pong hop is one "round"; after 3 rounds the Pong node's edge routes to
-/// <see cref="GraphRunner.End"/> instead of back to Ping. This exists purely to prove
+/// <see cref="GraphDefinition.End"/> instead of back to Ping. This exists purely to prove
 /// that conditional routing and cycles work end-to-end in the engine - it carries no
 /// domain logic of its own.
 /// </summary>
@@ -38,24 +38,24 @@ public static class PingPongExample
         }
     }
 
-    public static GraphRunner BuildRunner(int maxSteps = 50)
+    public static GraphDefinition BuildDefinition(int maxSteps = 50)
     {
-        var runner = new GraphRunner(maxSteps);
+        var definition = new GraphDefinition(maxSteps);
 
-        runner.RegisterNode("Ping", new PingNode());
-        runner.RegisterNode("Pong", new PongNode());
+        definition.RegisterNode("Ping", new PingNode());
+        definition.RegisterNode("Pong", new PongNode());
 
-        runner.RegisterEdge("Ping", _ => "Pong");
-        runner.RegisterEdge("Pong", state =>
-            state.Get<int>("round") >= TotalRounds ? GraphRunner.End : "Ping");
+        definition.RegisterEdge("Ping", _ => "Pong");
+        definition.RegisterEdge("Pong", state =>
+            state.Get<int>("round") >= TotalRounds ? GraphDefinition.End : "Ping");
 
-        return runner;
+        return definition;
     }
 
     public static Task<GraphRunResult> RunAsync()
     {
-        var runner = BuildRunner();
+        var definition = BuildDefinition();
         var state = new GraphState(new Dictionary<string, object> { ["round"] = 0 });
-        return runner.RunAsync("Ping", state);
+        return definition.CreateRun().RunAsync("Ping", state);
     }
 }

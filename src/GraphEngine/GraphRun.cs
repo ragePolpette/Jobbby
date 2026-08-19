@@ -3,52 +3,24 @@ using System.Collections.Concurrent;
 namespace GraphEngine;
 
 /// <summary>
-/// Executes a graph of <see cref="INode"/>s connected by <see cref="Edge"/>s. Starting
-/// from an initial node, it repeatedly executes the current node, merges its updates
-/// into the <see cref="GraphState"/>, asks that node's edge which node to run next, and
-/// repeats until routing returns <see cref="Edge.End"/> or the configured
-/// <see cref="MaxSteps"/> is exceeded. Cycles are ordinary routing decisions: nothing
-/// prevents an edge from sending execution back to a node that already ran.
+/// A single, independently steerable execution of a <see cref="GraphDefinition"/>.
+/// Created via <see cref="GraphDefinition.CreateRun"/>; all state that is specific to one
+/// execution — pending steering injections, pause/resume signalling — lives here rather
+/// than on the shared definition, so multiple runs of the same graph can proceed
+/// concurrently without interfering with one another.
 /// </summary>
-public sealed class GraphRunner
+public sealed class GraphRun
 {
-    private readonly Dictionary<string, INode> _nodes = new();
-    private readonly Dictionary<string, Edge> _edges = new();
+    private readonly GraphDefinition _definition;
     private readonly ConcurrentQueue<(string Key, object Value)> _pendingInjections = new();
 
     private volatile bool _pauseRequested;
     private TaskCompletionSource<bool>? _pauseSignal;
 
-    public const string End = Edge.End;
-
-    public int MaxSteps { get; }
-
-    public GraphRunner(int maxSteps = 100)
+    internal GraphRun(GraphDefinition definition)
     {
-        if (maxSteps <= 0)
-            throw new ArgumentOutOfRangeException(nameof(maxSteps), "max_steps must be greater than zero.");
-
-        MaxSteps = maxSteps;
+        _definition = definition;
     }
-
-    public GraphRunner RegisterNode(string name, INode node)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            throw new ArgumentException("Node name must not be empty.", nameof(name));
-
-        _nodes[name] = node ?? throw new ArgumentNullException(nameof(node));
-        return this;
-    }
-
-    public GraphRunner RegisterEdge(Edge edge)
-    {
-        ArgumentNullException.ThrowIfNull(edge);
-        _edges[edge.From] = edge;
-        return this;
-    }
-
-    public GraphRunner RegisterEdge(string fromNode, Func<GraphState, string> router) =>
-        RegisterEdge(new Edge(fromNode, router));
 
     /// <summary>
     /// Runtime steering hook: enqueues a key/value pair to be written into the running
@@ -58,13 +30,13 @@ public sealed class GraphRunner
     public void Steer(string key, object value) => _pendingInjections.Enqueue((key, value));
 
     /// <summary>
-    /// Requests that the run suspend before its next node executes. Combine with
+    /// Requests that this run suspend before its next node executes. Combine with
     /// <see cref="Steer"/> to guarantee an injected value is in place before a specific
     /// node runs, then call <see cref="Resume"/> to let execution continue.
     /// </summary>
     public void RequestPause() => _pauseRequested = true;
 
-    /// <summary>Resumes a run that is currently suspended after <see cref="RequestPause"/>.</summary>
+    /// <summary>Resumes this run if it is currently suspended after <see cref="RequestPause"/>.</summary>
     public void Resume() => _pauseSignal?.TrySetResult(true);
 
     public bool IsPaused => _pauseSignal is { Task.IsCompleted: false };
@@ -76,28 +48,28 @@ public sealed class GraphRunner
     {
         ArgumentNullException.ThrowIfNull(state);
 
-        if (!_nodes.ContainsKey(startNode))
+        if (!_definition.ContainsNode(startNode))
             throw new InvalidOperationException($"No node registered with name '{startNode}'.");
 
         var current = startNode;
         var step = 0;
 
-        while (!string.Equals(current, End, StringComparison.Ordinal))
+        while (!string.Equals(current, GraphDefinition.End, StringComparison.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (step >= MaxSteps)
-                throw new GraphMaxStepsExceededException(MaxSteps);
+            if (step >= _definition.MaxSteps)
+                throw new GraphMaxStepsExceededException(_definition.MaxSteps);
 
             if (_pauseRequested)
                 await WaitForResumeAsync(cancellationToken).ConfigureAwait(false);
 
             ApplyPendingInjections(state);
 
-            if (!_nodes.TryGetValue(current, out var node))
+            if (!_definition.TryGetNode(current, out var node))
                 throw new InvalidOperationException($"No node registered with name '{current}'.");
 
-            if (!_edges.TryGetValue(current, out var edge))
+            if (!_definition.TryGetEdge(current, out var edge))
                 throw new InvalidOperationException($"No edge registered for node '{current}'.");
 
             var before = state.Snapshot();
