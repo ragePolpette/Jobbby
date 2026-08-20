@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\GraphEngine\GraphEngine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
+  </ItemGroup>
+
+  <!-- src/Config is not its own project; its source is compiled into this project,
+       the one expected to consume the source whitelist and its secrets. -->
+  <ItemGroup>
+    <Compile Include="..\Config\**\*.cs" LinkBase="Config" />
+    <None Include="..\Config\sources.json" Link="Config\sources.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseAppHost>false</UseAppHost>
+    <UserSecretsId>64c15329-c5ef-4981-9ab4-6036a26843d6</UserSecretsId>
+  </PropertyGroup>
+
+</Project>

@@ -2,3 +2,8 @@ bin/
 obj/
 *.user
 .vs/
+
+# Local secrets that aren't managed through `dotnet user-secrets` must never be committed.
+secrets.json
+*.secrets.json
+appsettings.*.local.json

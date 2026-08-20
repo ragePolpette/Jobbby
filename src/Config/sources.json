@@ -1,0 +1,23 @@
+[
+  {
+    "name": "RemoteOK",
+    "baseUrl": "https://remoteok.com/api",
+    "type": "api",
+    "requiresAuth": false,
+    "authSecretKey": null
+  },
+  {
+    "name": "LinkedInJobs",
+    "baseUrl": "https://api.linkedin.com/v2/jobs",
+    "type": "api",
+    "requiresAuth": true,
+    "authSecretKey": "LinkedInJobs:ApiKey"
+  },
+  {
+    "name": "CompanyCareersPage",
+    "baseUrl": "https://example.com/careers",
+    "type": "html",
+    "requiresAuth": false,
+    "authSecretKey": null
+  }
+]
