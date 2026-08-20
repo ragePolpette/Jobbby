@@ -8,11 +8,12 @@
     <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
   </ItemGroup>
 
-  <!-- src/Config is not its own project; its source is compiled into this project,
-       the one expected to consume the source whitelist and its secrets. -->
+  <!-- src/Config and src/ApplicationLedger are not their own projects; their source is
+       compiled into this project rather than duplicated or given a dedicated csproj. -->
   <ItemGroup>
     <Compile Include="..\Config\**\*.cs" LinkBase="Config" />
     <None Include="..\Config\sources.json" Link="Config\sources.json" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="..\ApplicationLedger\**\*.cs" LinkBase="ApplicationLedger" />
   </ItemGroup>
 
   <PropertyGroup>
