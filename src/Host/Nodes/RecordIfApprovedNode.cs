@@ -4,9 +4,10 @@ using GraphEngine;
 namespace Host.Nodes;
 
 /// <summary>
-/// Records the application only if the approval response contains "si" (case
-/// insensitive) - a deliberately simple check, not a full yes/no parser. A missing
-/// response (timeout) or any other reply is treated as not approved: nothing is
+/// Records the application only if the approval response is exactly "si"/"sì" (trimmed,
+/// case insensitive, accent-insensitive) - a whole-word match, not a substring one, so
+/// replies like "no, non sono sicuro" or "così così" aren't misread as approval. A
+/// missing response (timeout) or any other reply is treated as not approved: nothing is
 /// recorded, but nothing fails either.
 /// </summary>
 public sealed class RecordIfApprovedNode : INode
@@ -23,7 +24,8 @@ public sealed class RecordIfApprovedNode : INode
     public Task<NodeResult> ExecuteAsync(GraphState state)
     {
         var response = state.Get<string>(AskApprovalNode.ResponseStateKey) ?? string.Empty;
-        var approved = response.Contains("si", StringComparison.OrdinalIgnoreCase);
+        var normalized = response.Trim().ToLowerInvariant();
+        var approved = normalized is "si" or "sì";
 
         if (!approved)
             return Task.FromResult(NodeResult.From(RecordedStateKey, false));

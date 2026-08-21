@@ -61,7 +61,7 @@ public class HostGraphTests
             var state = NewApplicationState();
 
             var runTask = definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
-            gateway.SimulateReply(1, "si, confermo");
+            gateway.SimulateReply(1, "  Sì  "); // exercises trim + case/accent-insensitive matching
 
             await runTask;
 
@@ -93,6 +93,36 @@ public class HostGraphTests
 
             var runTask = definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
             gateway.SimulateReply(1, "no grazie");
+
+            await runTask;
+
+            Assert.False(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
+
+            var dedupeKey = ApplicationLedger.DedupeKey.Normalize("Acme", "Backend Engineer");
+            Assert.False(ledger.HasApplied(dedupeKey));
+        }
+        finally
+        {
+            File.Delete(ledgerPath);
+        }
+    }
+
+    [Fact]
+    public async Task Rejected_ResponseContainingSiAsSubstring_IsNotMisreadAsApproval()
+    {
+        var gateway = new MockTelegramGateway();
+        var registry = new PendingApprovalRegistry();
+        gateway.ReplyReceived += registry.OnReply;
+
+        var ledgerPath = NewLedgerPath();
+        try
+        {
+            var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
+            var definition = HostGraph.Build(gateway, registry, ledger, approvalTimeout: TimeSpan.FromSeconds(5));
+            var state = NewApplicationState();
+
+            var runTask = definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
+            gateway.SimulateReply(1, "no, non sono sicuro");
 
             await runTask;
 
