@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\GraphEngine\GraphEngine.csproj" />
+    <!-- Config, ApplicationLedger and Notifications are compiled into CvExtraction.csproj
+         (they have no dedicated project); referencing it is how Host reaches their types. -->
+    <ProjectReference Include="..\CvExtraction\CvExtraction.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\Config\sources.json" Link="sources.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseAppHost>false</UseAppHost>
+  </PropertyGroup>
+
+</Project>

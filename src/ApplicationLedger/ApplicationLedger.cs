@@ -17,6 +17,7 @@ public sealed class ApplicationLedger
 
     private readonly string _filePath;
     private readonly List<ApplicationRecord> _records;
+    private readonly object _lock = new();
 
     public ApplicationLedger(string filePath)
     {
@@ -26,12 +27,25 @@ public sealed class ApplicationLedger
             : new List<ApplicationRecord>();
     }
 
-    public bool HasApplied(string dedupeKey) =>
-        _records.Any(r => r.DedupeKey == dedupeKey);
+    public bool HasApplied(string dedupeKey)
+    {
+        lock (_lock)
+        {
+            return _records.Any(r => r.DedupeKey == dedupeKey);
+        }
+    }
 
+    /// <summary>
+    /// Records an application and rewrites the file. Guarded by a lock because a single
+    /// ledger instance can be shared across concurrent <c>GraphRun</c>s (e.g. one per
+    /// source), each potentially recording an application around the same time.
+    /// </summary>
     public void RecordApplied(ApplicationRecord record)
     {
-        _records.Add(record);
-        File.WriteAllText(_filePath, JsonSerializer.Serialize(_records, SerializerOptions));
+        lock (_lock)
+        {
+            _records.Add(record);
+            File.WriteAllText(_filePath, JsonSerializer.Serialize(_records, SerializerOptions));
+        }
     }
 }
