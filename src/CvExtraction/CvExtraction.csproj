@@ -8,12 +8,14 @@
     <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
   </ItemGroup>
 
-  <!-- src/Config and src/ApplicationLedger are not their own projects; their source is
-       compiled into this project rather than duplicated or given a dedicated csproj. -->
+  <!-- src/Config, src/ApplicationLedger and src/Notifications are not their own
+       projects; their source is compiled into this project rather than duplicated or
+       given a dedicated csproj each. -->
   <ItemGroup>
     <Compile Include="..\Config\**\*.cs" LinkBase="Config" />
     <None Include="..\Config\sources.json" Link="Config\sources.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\ApplicationLedger\**\*.cs" LinkBase="ApplicationLedger" />
+    <Compile Include="..\Notifications\**\*.cs" LinkBase="Notifications" />
   </ItemGroup>
 
   <PropertyGroup>
