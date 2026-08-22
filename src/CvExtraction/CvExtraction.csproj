@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
   </ItemGroup>
 
   <!-- src/Config, src/ApplicationLedger and src/Notifications are not their own
@@ -14,6 +15,7 @@
   <ItemGroup>
     <Compile Include="..\Config\**\*.cs" LinkBase="Config" />
     <None Include="..\Config\sources.json" Link="Config\sources.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Config\sources.yaml" Link="Config\sources.yaml" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\ApplicationLedger\**\*.cs" LinkBase="ApplicationLedger" />
     <Compile Include="..\Notifications\**\*.cs" LinkBase="Notifications" />
   </ItemGroup>

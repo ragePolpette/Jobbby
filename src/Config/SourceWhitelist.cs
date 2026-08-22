@@ -9,12 +9,26 @@ namespace Config;
 /// environment variable in production, see <see cref="SourceWhitelist.ResolveSecret"/> -
 /// never the credential itself. Real credentials never belong in sources.json.
 /// </summary>
-public sealed record SourceDefinition(
-    [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("baseUrl")] string BaseUrl,
-    [property: JsonPropertyName("type")] string Type,
-    [property: JsonPropertyName("requiresAuth")] bool RequiresAuth,
-    [property: JsonPropertyName("authSecretKey")] string? AuthSecretKey);
+// Property-based (not positional) so it has a parameterless constructor and settable
+// properties: YamlDotNet's default object factory needs both, System.Text.Json is fine
+// with either style.
+public sealed record SourceDefinition
+{
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    [JsonPropertyName("baseUrl")]
+    public string BaseUrl { get; init; } = string.Empty;
+
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = string.Empty;
+
+    [JsonPropertyName("requiresAuth")]
+    public bool RequiresAuth { get; init; }
+
+    [JsonPropertyName("authSecretKey")]
+    public string? AuthSecretKey { get; init; }
+}
 
 /// <summary>Loads the whitelist of external sources domain nodes are allowed to query.</summary>
 public static class SourceWhitelist
@@ -24,8 +38,9 @@ public static class SourceWhitelist
         PropertyNameCaseInsensitive = true,
     };
 
+    /// <summary>Loads the whitelist from a .json, .yaml or .yml file, chosen by extension.</summary>
     public static IReadOnlyList<SourceDefinition> LoadFromFile(string path) =>
-        Load(File.ReadAllText(path));
+        ConfigLoader.Load<List<SourceDefinition>>(path);
 
     public static IReadOnlyList<SourceDefinition> Load(string json) =>
         JsonSerializer.Deserialize<List<SourceDefinition>>(json, SerializerOptions)

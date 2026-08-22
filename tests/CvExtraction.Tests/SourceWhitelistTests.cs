@@ -30,6 +30,23 @@ public class SourceWhitelistTests
     }
 
     [Fact]
+    public void LoadFromFile_Json_And_Yaml_ProduceEquivalentWhitelists()
+    {
+        var jsonPath = Path.Combine(AppContext.BaseDirectory, "Config", "sources.json");
+        var yamlPath = Path.Combine(AppContext.BaseDirectory, "Config", "sources.yaml");
+
+        var fromJson = SourceWhitelist.LoadFromFile(jsonPath);
+        var fromYaml = SourceWhitelist.LoadFromFile(yamlPath);
+
+        Assert.Equal(3, fromYaml.Count);
+        Assert.Equal(fromJson, fromYaml);
+
+        var linkedIn = fromYaml.Single(s => s.Name == "LinkedInJobs");
+        Assert.True(linkedIn.RequiresAuth);
+        Assert.Equal("LinkedInJobs:ApiKey", linkedIn.AuthSecretKey);
+    }
+
+    [Fact]
     public void ResolveSecret_ReadsFromEnvironmentVariable()
     {
         const string key = "SOURCE_WHITELIST_TEST_SECRET";
