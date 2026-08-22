@@ -27,28 +27,33 @@ var ledger = new ApplicationLedger.ApplicationLedger(applicationsPath);
 // reuse concurrently (see GraphDefinition/GraphRun).
 var definition = HostGraph.Build(gateway, registry, ledger);
 
-var runs = sources.Select(source => RunForSourceAsync(definition, source));
+var runs = sources.Select((source, index) => RunForSourceAsync(definition, source, index));
 await Task.WhenAll(runs);
 
 gateway.Stop();
 
 Console.WriteLine("All source runs completed.");
 
-static async Task RunForSourceAsync(GraphDefinition definition, SourceDefinition source)
+static async Task RunForSourceAsync(GraphDefinition definition, SourceDefinition source, int index)
 {
     // No real source agent yet - placeholder Company/Title so the graph has something
     // to dedupe-check and ask approval for.
     var company = $"{source.Name} Corp";
     const string title = "Fake Role";
 
+    // No real match scoring yet either - alternate a high/low confidence per source so a
+    // single run exercises both the auto-approved path and the Telegram-approval path.
+    var matchConfidence = index % 2 == 0 ? 0.9 : 0.3;
+
     var state = new GraphState(new Dictionary<string, object>
     {
         [JobApplicationStateKeys.Company] = company,
         [JobApplicationStateKeys.Title] = title,
         [JobApplicationStateKeys.SourceUrl] = source.BaseUrl,
+        [ScoreMatchNode.MatchConfidenceStateKey] = matchConfidence,
     });
 
-    Console.WriteLine($"[{source.Name}] starting: {company} / {title}");
+    Console.WriteLine($"[{source.Name}] starting: {company} / {title} (MatchConfidence={matchConfidence:0.00})");
 
     await definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
 
@@ -59,6 +64,9 @@ static string DescribeOutcome(GraphState state)
 {
     if (state.Get<bool>(DedupeCheckNode.AlreadyAppliedStateKey))
         return "scartato per dedupe";
+
+    if (state.Get<bool>(RecordIfApprovedNode.AutoApprovedStateKey))
+        return "auto-approvato (confidenza alta, nessuna richiesta Telegram)";
 
     if (state.Get<string>(AskApprovalNode.OutcomeStateKey) == HumanInputNode.SkippedNoResponseOutcome)
         return "in attesa di approvazione (nessuna risposta entro il timeout)";

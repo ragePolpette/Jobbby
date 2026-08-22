@@ -17,6 +17,13 @@ public class HostGraphTests
 
     private static string NewLedgerPath() => Path.Combine(Path.GetTempPath(), $"applications-{Guid.NewGuid():N}.json");
 
+    private static GraphState NewApplicationStateWithConfidence(double matchConfidence, string company = "Acme", string title = "Backend Engineer")
+    {
+        var state = NewApplicationState(company, title);
+        state.Set(ScoreMatchNode.MatchConfidenceStateKey, matchConfidence);
+        return state;
+    }
+
     [Fact]
     public async Task AlreadyApplied_RoutesStraightToEnd_WithoutAskingApproval()
     {
@@ -130,6 +137,120 @@ public class HostGraphTests
 
             var dedupeKey = ApplicationLedger.DedupeKey.Normalize("Acme", "Backend Engineer");
             Assert.False(ledger.HasApplied(dedupeKey));
+        }
+        finally
+        {
+            File.Delete(ledgerPath);
+        }
+    }
+
+    [Fact]
+    public async Task HighConfidence_AutoApproves_NeverAsksTelegramAndStillRecords()
+    {
+        var gateway = new MockTelegramGateway();
+        var registry = new PendingApprovalRegistry();
+        gateway.ReplyReceived += registry.OnReply;
+
+        var ledgerPath = NewLedgerPath();
+        try
+        {
+            var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
+            var definition = HostGraph.Build(gateway, registry, ledger, confidenceThreshold: 0.7);
+            var state = NewApplicationStateWithConfidence(0.9);
+
+            await definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
+
+            Assert.Empty(gateway.SentMessages); // AskApprovalNode never ran
+            Assert.True(state.Get<bool>(RecordIfApprovedNode.AutoApprovedStateKey));
+            Assert.True(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
+
+            var dedupeKey = ApplicationLedger.DedupeKey.Normalize("Acme", "Backend Engineer");
+            Assert.True(ledger.HasApplied(dedupeKey));
+        }
+        finally
+        {
+            File.Delete(ledgerPath);
+        }
+    }
+
+    [Fact]
+    public async Task ConfidenceExactlyAtThreshold_CountsAsHighEnough_AutoApproves()
+    {
+        var gateway = new MockTelegramGateway();
+        var registry = new PendingApprovalRegistry();
+        gateway.ReplyReceived += registry.OnReply;
+
+        var ledgerPath = NewLedgerPath();
+        try
+        {
+            var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
+            var definition = HostGraph.Build(gateway, registry, ledger, confidenceThreshold: 0.7);
+            var state = NewApplicationStateWithConfidence(0.7);
+
+            await definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
+
+            Assert.Empty(gateway.SentMessages);
+            Assert.True(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
+        }
+        finally
+        {
+            File.Delete(ledgerPath);
+        }
+    }
+
+    [Fact]
+    public async Task LowConfidence_StillGoesThroughTelegramApproval_ExistingBehaviorUnchanged()
+    {
+        var gateway = new MockTelegramGateway();
+        var registry = new PendingApprovalRegistry();
+        gateway.ReplyReceived += registry.OnReply;
+
+        var ledgerPath = NewLedgerPath();
+        try
+        {
+            var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
+            var definition = HostGraph.Build(
+                gateway, registry, ledger, approvalTimeout: TimeSpan.FromSeconds(5), confidenceThreshold: 0.7);
+            var state = NewApplicationStateWithConfidence(0.3);
+
+            var runTask = definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
+            gateway.SimulateReply(1, "  Sì  ");
+
+            await runTask;
+
+            Assert.Contains("Acme", Assert.Single(gateway.SentMessages));
+            Assert.False(state.Get<bool>(RecordIfApprovedNode.AutoApprovedStateKey));
+            Assert.True(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
+
+            var dedupeKey = ApplicationLedger.DedupeKey.Normalize("Acme", "Backend Engineer");
+            Assert.True(ledger.HasApplied(dedupeKey));
+        }
+        finally
+        {
+            File.Delete(ledgerPath);
+        }
+    }
+
+    [Fact]
+    public async Task LowConfidence_TimeoutStillSkipsWithoutRecordingOrAutoApproving()
+    {
+        var gateway = new MockTelegramGateway();
+        var registry = new PendingApprovalRegistry();
+        gateway.ReplyReceived += registry.OnReply;
+
+        var ledgerPath = NewLedgerPath();
+        try
+        {
+            var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
+            var definition = HostGraph.Build(
+                gateway, registry, ledger, approvalTimeout: TimeSpan.FromMilliseconds(50), confidenceThreshold: 0.7);
+            var state = NewApplicationStateWithConfidence(0.1);
+
+            await definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
+
+            Assert.Equal(HumanInputNode.SkippedNoResponseOutcome, state.Get<string>(AskApprovalNode.OutcomeStateKey));
+            Assert.False(state.Get<bool>(RecordIfApprovedNode.AutoApprovedStateKey));
+            Assert.False(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
         }
         finally
         {
