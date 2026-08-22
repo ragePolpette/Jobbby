@@ -1,0 +1,15 @@
+{
+  "name": "Mario Rossi",
+  "yearsExperience": 6,
+  "seniority": "Senior",
+  "roles": [
+    {
+      "title": "Backend Engineer",
+      "company": "Previous Co",
+      "stack": ["C#", ".NET", "SQL"],
+      "highlights": ["Migrated a monolith to microservices"]
+    }
+  ],
+  "skills": ["C#", ".NET", "SQL", "Docker", "Kubernetes"],
+  "languages": ["Italian", "English"]
+}

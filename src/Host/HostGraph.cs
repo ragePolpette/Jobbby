@@ -1,15 +1,17 @@
+using CvExtraction;
 using GraphEngine;
 using Host.Nodes;
+using Matching;
 using Notifications;
 
 namespace Host;
 
 /// <summary>
 /// Builds the placeholder graph: NormalizeJobPosting -> DedupeCheck -> (already applied?
-/// END : ScoreMatch) -> (confidence >= threshold? auto-approve straight to
-/// RecordIfApproved : AskApproval) -> RecordIfApproved -> END. Factored out of Program.cs
-/// so it can be built and run against a <see cref="MockTelegramGateway"/> in tests
-/// without any real Telegram/network setup.
+/// END : ScoreMatch) -> (stage-one filter failed? END : confidence >= threshold?
+/// auto-approve straight to RecordIfApproved : AskApproval) -> RecordIfApproved -> END.
+/// Factored out of Program.cs so it can be built and run against a
+/// <see cref="MockTelegramGateway"/> in tests without any real Telegram/network setup.
 /// </summary>
 public static class HostGraph
 {
@@ -24,6 +26,7 @@ public static class HostGraph
         PendingApprovalRegistry registry,
         ApplicationLedger.ApplicationLedger ledger,
         ILlmClient llmClient,
+        CvData candidateCv,
         int maxSteps = 10,
         TimeSpan? approvalTimeout = null,
         double confidenceThreshold = 0.7)
@@ -32,7 +35,7 @@ public static class HostGraph
 
         definition.RegisterNode(NormalizeJobPostingNodeName, new NormalizeJobPostingNode(llmClient));
         definition.RegisterNode(DedupeCheckNodeName, new DedupeCheckNode(ledger));
-        definition.RegisterNode(ScoreMatchNodeName, new ScoreMatchNode());
+        definition.RegisterNode(ScoreMatchNodeName, new ScoreMatchNode(candidateCv, new MatchStageTwoJudge(llmClient)));
         definition.RegisterNode(AskApprovalNodeName, new AskApprovalNode(gateway, registry, approvalTimeout));
         definition.RegisterNode(RecordIfApprovedNodeName, new RecordIfApprovedNode(ledger));
 
@@ -43,6 +46,12 @@ public static class HostGraph
 
         definition.RegisterEdge(ScoreMatchNodeName, state =>
         {
+            // Stage-one rejection is a hard stop added ahead of the existing
+            // threshold-based routing below (which is otherwise unchanged): it never
+            // reaches AskApproval/Telegram at all.
+            if (!state.Get<bool>(ScoreMatchNode.StageOnePassedStateKey))
+                return GraphDefinition.End;
+
             var confidence = state.Get<double>(ScoreMatchNode.MatchConfidenceStateKey);
 
             if (confidence < confidenceThreshold)

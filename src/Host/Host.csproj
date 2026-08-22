@@ -6,10 +6,12 @@
          (they have no dedicated project); referencing it is how Host reaches their types. -->
     <ProjectReference Include="..\CvExtraction\CvExtraction.csproj" />
     <ProjectReference Include="..\JobPostings\JobPostings.csproj" />
+    <ProjectReference Include="..\Matching\Matching.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="..\Config\sources.json" Link="sources.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="cv.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup>
