@@ -4,7 +4,17 @@ using GraphEngine;
 using Host;
 using Host.Nodes;
 using JobPostings;
+using Microsoft.Extensions.Configuration;
 using Notifications;
+
+// Secrets (Telegram bot token, Brave/Adzuna API keys, ...) resolve through this:
+// AddUserSecrets<Program>() is where `dotnet user-secrets set <key> <value>` values
+// actually surface in development; AddEnvironmentVariables() is what production sets
+// instead. SourceWhitelist.ResolveSecret reads from whichever of the two has the key.
+SourceWhitelist.Configuration = new ConfigurationBuilder()
+    .AddEnvironmentVariables()
+    .AddUserSecrets<Program>()
+    .Build();
 
 using var httpClient = new HttpClient();
 

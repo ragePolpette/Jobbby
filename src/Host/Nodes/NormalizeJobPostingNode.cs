@@ -6,12 +6,13 @@ using JobPostings;
 namespace Host.Nodes;
 
 /// <summary>
-/// Turns a RawPosting into a normalized JobPosting. Company, SeniorityLevel and
-/// RequiredStack come from the LLM reading the raw title/description - Company is
-/// included in that same extraction because RawPosting doesn't carry it separately.
-/// ApplyChannel is decided deterministically, no LLM involved: a "mailto:" ApplyUrl is
-/// email; an ApplyUrl on the source's own domain is native_form; anything else is
-/// external_platform.
+/// Turns a RawPosting into a normalized JobPosting. SeniorityLevel and RequiredStack
+/// always come from the LLM reading the raw title/description. Company comes from
+/// RawPosting.Company directly when the source provided one; only when that's empty does
+/// the LLM get asked for it too, as a fallback for sources that don't expose it
+/// separately. ApplyChannel is decided deterministically, no LLM involved: a "mailto:"
+/// ApplyUrl is email; an ApplyUrl on the source's own domain is native_form; anything
+/// else is external_platform.
 /// </summary>
 public sealed class NormalizeJobPostingNode : INode
 {
@@ -37,12 +38,14 @@ public sealed class NormalizeJobPostingNode : INode
 
         var sourceUrl = state.Get<string>(JobApplicationStateKeys.SourceUrl) ?? string.Empty;
 
-        var extraction = await ExtractAsync(rawPosting).ConfigureAwait(false);
+        var needsCompanyFromLlm = string.IsNullOrWhiteSpace(rawPosting.Company);
+        var extraction = await ExtractAsync(rawPosting, needsCompanyFromLlm).ConfigureAwait(false);
+        var company = needsCompanyFromLlm ? extraction.Company : rawPosting.Company;
         var applyChannel = DetermineApplyChannel(rawPosting.ApplyUrl, rawPosting.SourceDomain);
 
         var jobPosting = new JobPosting(
             Title: rawPosting.RawTitle,
-            Company: extraction.Company,
+            Company: company,
             SeniorityLevel: extraction.SeniorityLevel,
             RequiredStack: extraction.RequiredStack,
             Description: rawPosting.RawDescription,
@@ -74,26 +77,41 @@ public sealed class NormalizeJobPostingNode : INode
         return ApplyChannels.ExternalPlatform;
     }
 
-    private async Task<ExtractionResult> ExtractAsync(RawPosting rawPosting)
+    private async Task<ExtractionResult> ExtractAsync(RawPosting rawPosting, bool includeCompany)
     {
-        var prompt = $$"""
+        var prompt = BuildPrompt(rawPosting, includeCompany);
+        var response = await _llmClient.CompleteAsync(prompt).ConfigureAwait(false);
+
+        return JsonSerializer.Deserialize<ExtractionResult>(response, JsonOptions)
+            ?? throw new InvalidOperationException("LLM response could not be parsed as job posting extraction JSON.");
+    }
+
+    private static string BuildPrompt(RawPosting rawPosting, bool includeCompany)
+    {
+        var schema = includeCompany
+            ? """
+              {
+                "company": string,
+                "seniorityLevel": string,
+                "requiredStack": [string]
+              }
+              """
+            : """
+              {
+                "seniorityLevel": string,
+                "requiredStack": [string]
+              }
+              """;
+
+        return $$"""
             Estrai le seguenti informazioni dall'annuncio di lavoro grezzo.
 
             Titolo: {{rawPosting.RawTitle}}
             Descrizione: {{rawPosting.RawDescription}}
 
             Restituisci SOLO JSON valido con questo schema, nessun markdown, nessun commento:
-            {
-              "company": string,
-              "seniorityLevel": string,
-              "requiredStack": [string]
-            }
+            {{schema}}
             """;
-
-        var response = await _llmClient.CompleteAsync(prompt).ConfigureAwait(false);
-
-        return JsonSerializer.Deserialize<ExtractionResult>(response, JsonOptions)
-            ?? throw new InvalidOperationException("LLM response could not be parsed as job posting extraction JSON.");
     }
 
     private sealed record ExtractionResult

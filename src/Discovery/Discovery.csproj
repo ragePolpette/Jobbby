@@ -2,16 +2,18 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GraphEngine\GraphEngine.csproj" />
+    <!-- Config (ConfigLoader, SourceWhitelist.ResolveSecret) is compiled into
+         CvExtraction.csproj, which has no dedicated project of its own; referencing it
+         here - rather than re-linking the source files - is how BraveSearchClient reuses
+         the exact same ResolveSecret/IConfiguration wiring as everything else, without
+         ending up with a second, incompatible copy of Config.SourceDefinition. This is
+         only an assembly dependency: nothing in Discovery's own code becomes
+         job-specific. -->
+    <ProjectReference Include="..\CvExtraction\CvExtraction.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="YamlDotNet" Version="18.1.0" />
-  </ItemGroup>
-
-  <!-- Only ConfigLoader.cs, not the whole Config folder: SourceWhitelist is a job-search
-       concept (source/whitelist), and Discovery must stay domain-agnostic. -->
-  <ItemGroup>
-    <Compile Include="..\Config\ConfigLoader.cs" LinkBase="Config" />
   </ItemGroup>
 
   <PropertyGroup>

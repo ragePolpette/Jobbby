@@ -13,24 +13,31 @@ public sealed class AdzunaJobSource : IJobSource
     private readonly HttpClient _httpClient;
     private readonly string _appId;
     private readonly string _appKey;
+    private readonly int _resultsPerPage;
 
-    public AdzunaJobSource(HttpClient httpClient, string appId, string appKey)
+    /// <param name="resultsPerPage">
+    /// Caps how many postings Adzuna returns per source per fetch. Kept deliberately
+    /// small by default (10) so a first real run doesn't fan out into an uncontrolled
+    /// number of GraphRuns - and Telegram approval requests - all at once.
+    /// </param>
+    public AdzunaJobSource(HttpClient httpClient, string appId, string appKey, int resultsPerPage = 10)
     {
         _httpClient = httpClient;
         _appId = appId;
         _appKey = appKey;
+        _resultsPerPage = resultsPerPage;
     }
 
     /// <summary>
-    /// Builds a source resolving app_id/app_key the same way secrets are resolved
-    /// elsewhere in this codebase: `dotnet user-secrets set &lt;key&gt; &lt;value&gt;` in
-    /// development, or environment variables of the same name in production. Never
-    /// hardcoded.
+    /// Builds a source resolving app_id/app_key via <see cref="SourceWhitelist.ResolveSecret"/>
+    /// - the same user-secrets/environment-variable resolution used everywhere else in
+    /// this codebase. Never hardcoded.
     /// </summary>
     public static AdzunaJobSource FromEnvironment(
         HttpClient httpClient,
         string appIdSecretKey = "Adzuna:AppId",
-        string appKeySecretKey = "Adzuna:AppKey")
+        string appKeySecretKey = "Adzuna:AppKey",
+        int resultsPerPage = 10)
     {
         var appId = SourceWhitelist.ResolveSecret(appIdSecretKey)
             ?? throw new InvalidOperationException(
@@ -42,7 +49,7 @@ public sealed class AdzunaJobSource : IJobSource
                 $"Missing secret '{appKeySecretKey}'. Set it with `dotnet user-secrets set {appKeySecretKey} <value>` " +
                 "in development, or as an environment variable in production.");
 
-        return new AdzunaJobSource(httpClient, appId, appKey);
+        return new AdzunaJobSource(httpClient, appId, appKey, resultsPerPage);
     }
 
     public async Task<IReadOnlyList<RawPosting>> FetchAsync(SourceDefinition source, CancellationToken cancellationToken = default)
@@ -50,7 +57,7 @@ public sealed class AdzunaJobSource : IJobSource
         // SourceDefinition has no dedicated search-query field, so a whitelist entry's
         // Name doubles as the Adzuna "what" keyword - configurable per source.
         var url = $"{SearchEndpoint}?app_id={Uri.EscapeDataString(_appId)}&app_key={Uri.EscapeDataString(_appKey)}" +
-                  $"&what={Uri.EscapeDataString(source.Name)}&content-type=application/json";
+                  $"&what={Uri.EscapeDataString(source.Name)}&results_per_page={_resultsPerPage}&content-type=application/json";
 
         using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
@@ -75,8 +82,9 @@ public sealed class AdzunaJobSource : IJobSource
                 var title = GetStringOrEmpty(result, "title");
                 var description = GetStringOrEmpty(result, "description");
                 var applyUrl = GetStringOrEmpty(result, "redirect_url");
+                var company = GetCompanyDisplayName(result);
 
-                postings.Add(new RawPosting(title, description, applyUrl, sourceDomain));
+                postings.Add(new RawPosting(title, description, applyUrl, sourceDomain, company));
             }
 
             return postings;
@@ -85,4 +93,11 @@ public sealed class AdzunaJobSource : IJobSource
 
     private static string GetStringOrEmpty(JsonElement element, string propertyName) =>
         element.TryGetProperty(propertyName, out var value) ? value.GetString() ?? string.Empty : string.Empty;
+
+    // Adzuna nests the employer name as company.display_name (see
+    // https://developer.adzuna.com/docs/search - the "company" object on each result).
+    private static string GetCompanyDisplayName(JsonElement result) =>
+        result.TryGetProperty("company", out var company)
+            ? GetStringOrEmpty(company, "display_name")
+            : string.Empty;
 }

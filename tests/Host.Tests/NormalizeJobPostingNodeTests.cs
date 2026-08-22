@@ -88,6 +88,38 @@ public class NormalizeJobPostingNodeTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_RawPostingHasCompany_UsesItDirectlyWithoutAskingLlm()
+    {
+        var rawPosting = new RawPosting(
+            "Backend Engineer", "Ottima opportunita in C#", "https://jobs.example/apply/123", "acme.example", Company: "Real Company Srl");
+
+        // No "company" key at all - if the node asked the LLM for it and used the
+        // response's (missing/default) value instead of RawPosting.Company, this would
+        // surface as an empty string rather than "Real Company Srl".
+        var llmClient = new MockLlmClient("""{"seniorityLevel":"Senior","requiredStack":["C#"]}""");
+        var node = new NormalizeJobPostingNode(llmClient);
+
+        var result = await node.ExecuteAsync(NewStateFor(rawPosting));
+        var jobPosting = (JobPosting)result.Updates[NormalizeJobPostingNode.JobPostingStateKey];
+
+        Assert.Equal("Real Company Srl", jobPosting.Company);
+        Assert.Equal("Senior", jobPosting.SeniorityLevel);
+        Assert.Equal(new[] { "C#" }, jobPosting.RequiredStack);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RawPostingHasNoCompany_FallsBackToAskingLlm()
+    {
+        var rawPosting = new RawPosting("Backend Engineer", "Ottima opportunita in C#", "https://jobs.example/apply/123", "acme.example");
+        var node = new NormalizeJobPostingNode(new MockLlmClient(FixedExtraction));
+
+        var result = await node.ExecuteAsync(NewStateFor(rawPosting));
+        var jobPosting = (JobPosting)result.Updates[NormalizeJobPostingNode.JobPostingStateKey];
+
+        Assert.Equal("Acme Corp", jobPosting.Company); // from FixedExtraction's "company"
+    }
+
+    [Fact]
     public async Task ExecuteAsync_NoRawPostingInState_Throws()
     {
         var node = new NormalizeJobPostingNode(new MockLlmClient(FixedExtraction));

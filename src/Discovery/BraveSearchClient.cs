@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Config;
 
 namespace Discovery;
 
@@ -19,14 +20,13 @@ public sealed class BraveSearchClient : IWebSearchClient
     }
 
     /// <summary>
-    /// Builds a client resolving the API key the same way secrets are resolved
-    /// elsewhere in this codebase: `dotnet user-secrets set &lt;key&gt; &lt;value&gt;` in
-    /// development, or an environment variable of the same name in production. Never
-    /// hardcoded.
+    /// Builds a client resolving the API key via <see cref="SourceWhitelist.ResolveSecret"/>
+    /// - the same user-secrets/environment-variable resolution used everywhere else in
+    /// this codebase. Never hardcoded.
     /// </summary>
     public static BraveSearchClient FromEnvironment(HttpClient httpClient, string apiKeySecretKey = "BraveSearch:ApiKey")
     {
-        var apiKey = Environment.GetEnvironmentVariable(apiKeySecretKey)
+        var apiKey = SourceWhitelist.ResolveSecret(apiKeySecretKey)
             ?? throw new InvalidOperationException(
                 $"Missing secret '{apiKeySecretKey}'. Set it with `dotnet user-secrets set {apiKeySecretKey} <value>` " +
                 "in development, or as an environment variable in production.");
