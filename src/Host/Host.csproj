@@ -5,6 +5,7 @@
     <!-- Config, ApplicationLedger and Notifications are compiled into CvExtraction.csproj
          (they have no dedicated project); referencing it is how Host reaches their types. -->
     <ProjectReference Include="..\CvExtraction\CvExtraction.csproj" />
+    <ProjectReference Include="..\JobPostings\JobPostings.csproj" />
   </ItemGroup>
 
   <ItemGroup>

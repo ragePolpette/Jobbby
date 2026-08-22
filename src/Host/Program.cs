@@ -2,6 +2,7 @@ using Config;
 using GraphEngine;
 using Host;
 using Host.Nodes;
+using JobPostings;
 using Notifications;
 
 using var httpClient = new HttpClient();
@@ -23,39 +24,50 @@ gateway.ReplyReceived += registry.OnReply;
 
 var ledger = new ApplicationLedger.ApplicationLedger(applicationsPath);
 
-// One GraphDefinition shared by every source's run - it's immutable config, safe to
-// reuse concurrently (see GraphDefinition/GraphRun).
-var definition = HostGraph.Build(gateway, registry, ledger);
+IJobSource jobSource = AdzunaJobSource.FromEnvironment(httpClient);
 
-var runs = sources.Select((source, index) => RunForSourceAsync(definition, source, index));
+// Real extraction still awaits a wired provider; MockLlmClient keeps NormalizeJobPosting
+// runnable end-to-end until then.
+ILlmClient llmClient = new MockLlmClient("""
+    {"company":"","seniorityLevel":"","requiredStack":[]}
+    """);
+
+// One GraphDefinition shared by every posting's run - it's immutable config, safe to
+// reuse concurrently (see GraphDefinition/GraphRun).
+var definition = HostGraph.Build(gateway, registry, ledger, llmClient);
+
+var runs = sources.Select(source => RunForSourceAsync(definition, jobSource, source));
 await Task.WhenAll(runs);
 
 gateway.Stop();
 
 Console.WriteLine("All source runs completed.");
 
-static async Task RunForSourceAsync(GraphDefinition definition, SourceDefinition source, int index)
+static async Task RunForSourceAsync(GraphDefinition definition, IJobSource jobSource, SourceDefinition source)
 {
-    // No real source agent yet - placeholder Company/Title so the graph has something
-    // to dedupe-check and ask approval for.
-    var company = $"{source.Name} Corp";
-    const string title = "Fake Role";
+    var rawPostings = await jobSource.FetchAsync(source);
+    Console.WriteLine($"[{source.Name}] fetched {rawPostings.Count} posting(s)");
 
-    // No real match scoring yet either - alternate a high/low confidence per source so a
+    var postingRuns = rawPostings.Select((rawPosting, index) => RunForPostingAsync(definition, source, rawPosting, index));
+    await Task.WhenAll(postingRuns);
+}
+
+static async Task RunForPostingAsync(GraphDefinition definition, SourceDefinition source, RawPosting rawPosting, int index)
+{
+    // No real match scoring yet - alternate a high/low confidence per posting so a
     // single run exercises both the auto-approved path and the Telegram-approval path.
     var matchConfidence = index % 2 == 0 ? 0.9 : 0.3;
 
     var state = new GraphState(new Dictionary<string, object>
     {
-        [JobApplicationStateKeys.Company] = company,
-        [JobApplicationStateKeys.Title] = title,
+        [NormalizeJobPostingNode.RawPostingStateKey] = rawPosting,
         [JobApplicationStateKeys.SourceUrl] = source.BaseUrl,
         [ScoreMatchNode.MatchConfidenceStateKey] = matchConfidence,
     });
 
-    Console.WriteLine($"[{source.Name}] starting: {company} / {title} (MatchConfidence={matchConfidence:0.00})");
+    Console.WriteLine($"[{source.Name}] starting: {rawPosting.RawTitle} (MatchConfidence={matchConfidence:0.00})");
 
-    await definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
+    await definition.CreateRun().RunAsync(HostGraph.NormalizeJobPostingNodeName, state);
 
     Console.WriteLine($"[{source.Name}] esito: {DescribeOutcome(state)}");
 }

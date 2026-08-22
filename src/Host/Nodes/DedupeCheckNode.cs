@@ -1,12 +1,13 @@
 using ApplicationLedger;
 using GraphEngine;
+using JobPostings;
 
 namespace Host.Nodes;
 
 /// <summary>
-/// Computes the dedup key for Company/Title and checks it against the
-/// <see cref="ApplicationLedger.ApplicationLedger"/>. Its edge routes straight to END
-/// when the key is already recorded, skipping approval entirely.
+/// Computes the dedup key from the normalized JobPosting's Company/Title and checks it
+/// against the <see cref="ApplicationLedger.ApplicationLedger"/>. Its edge routes
+/// straight to END when the key is already recorded, skipping approval entirely.
 /// </summary>
 public sealed class DedupeCheckNode : INode
 {
@@ -22,8 +23,9 @@ public sealed class DedupeCheckNode : INode
 
     public Task<NodeResult> ExecuteAsync(GraphState state)
     {
-        var company = state.Get<string>(JobApplicationStateKeys.Company) ?? string.Empty;
-        var title = state.Get<string>(JobApplicationStateKeys.Title) ?? string.Empty;
+        var jobPosting = state.Get<JobPosting>(NormalizeJobPostingNode.JobPostingStateKey);
+        var company = jobPosting?.Company ?? string.Empty;
+        var title = jobPosting?.Title ?? string.Empty;
         var dedupeKey = DedupeKey.Normalize(company, title);
 
         var alreadyApplied = _ledger.HasApplied(dedupeKey);
