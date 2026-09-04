@@ -3,6 +3,7 @@ using GraphEngine;
 using Host.Nodes;
 using Matching;
 using Notifications;
+using Reporting;
 
 namespace Host;
 
@@ -27,6 +28,7 @@ public static class HostGraph
         ApplicationLedger.ApplicationLedger ledger,
         ILlmClient llmClient,
         CvData candidateCv,
+        RunStatsCollector statsCollector,
         int maxSteps = 10,
         TimeSpan? approvalTimeout = null,
         double confidenceThreshold = 0.7)
@@ -34,10 +36,10 @@ public static class HostGraph
         var definition = new GraphDefinition(maxSteps);
 
         definition.RegisterNode(NormalizeJobPostingNodeName, new NormalizeJobPostingNode(llmClient));
-        definition.RegisterNode(DedupeCheckNodeName, new DedupeCheckNode(ledger));
-        definition.RegisterNode(ScoreMatchNodeName, new ScoreMatchNode(candidateCv, new MatchStageTwoJudge(llmClient)));
+        definition.RegisterNode(DedupeCheckNodeName, new DedupeCheckNode(ledger, statsCollector));
+        definition.RegisterNode(ScoreMatchNodeName, new ScoreMatchNode(candidateCv, new MatchStageTwoJudge(llmClient), statsCollector));
         definition.RegisterNode(AskApprovalNodeName, new AskApprovalNode(gateway, registry, approvalTimeout));
-        definition.RegisterNode(RecordIfApprovedNodeName, new RecordIfApprovedNode(ledger));
+        definition.RegisterNode(RecordIfApprovedNodeName, new RecordIfApprovedNode(ledger, statsCollector));
 
         definition.RegisterEdge(NormalizeJobPostingNodeName, _ => DedupeCheckNodeName);
 

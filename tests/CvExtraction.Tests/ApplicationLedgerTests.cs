@@ -6,7 +6,7 @@ namespace CvExtraction.Tests;
 public class ApplicationLedgerTests
 {
     [Fact]
-    public void RecordApplied_ThenHasApplied_FindsTheSameKey()
+    public void RecordApplied_ThenHasBeenProcessed_FindsTheSameKey()
     {
         var path = Path.Combine(Path.GetTempPath(), $"applications-{Guid.NewGuid():N}.json");
         try
@@ -14,11 +14,32 @@ public class ApplicationLedgerTests
             var ledger = new ApplicationLedger.ApplicationLedger(path);
             var key = DedupeKey.Normalize("Acme Corp", "Backend Engineer");
 
-            Assert.False(ledger.HasApplied(key));
+            Assert.False(ledger.HasBeenProcessed(key));
 
-            ledger.RecordApplied(new ApplicationRecord(key, "Acme Corp", "Backend Engineer", "https://acme.example/job/1", DateTimeOffset.UtcNow));
+            ledger.RecordApplied(new ApplicationRecord(
+                key, "Acme Corp", "Backend Engineer", "https://acme.example/job/1", DateTimeOffset.UtcNow, ApplicationOutcomes.Applied));
 
-            Assert.True(ledger.HasApplied(key));
+            Assert.True(ledger.HasBeenProcessed(key));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void RecordApplied_WithRejectedOutcome_StillCountsAsProcessed()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"applications-{Guid.NewGuid():N}.json");
+        try
+        {
+            var ledger = new ApplicationLedger.ApplicationLedger(path);
+            var key = DedupeKey.Normalize("Acme Corp", "Backend Engineer");
+
+            ledger.RecordApplied(new ApplicationRecord(
+                key, "Acme Corp", "Backend Engineer", null, DateTimeOffset.UtcNow, ApplicationOutcomes.Rejected));
+
+            Assert.True(ledger.HasBeenProcessed(key));
         }
         finally
         {
@@ -51,11 +72,12 @@ public class ApplicationLedgerTests
         {
             var key = DedupeKey.Normalize("Acme Corp", "Backend Engineer");
             var first = new ApplicationLedger.ApplicationLedger(path);
-            first.RecordApplied(new ApplicationRecord(key, "Acme Corp", "Backend Engineer", null, DateTimeOffset.UtcNow));
+            first.RecordApplied(new ApplicationRecord(
+                key, "Acme Corp", "Backend Engineer", null, DateTimeOffset.UtcNow, ApplicationOutcomes.Applied));
 
             var second = new ApplicationLedger.ApplicationLedger(path);
 
-            Assert.True(second.HasApplied(key));
+            Assert.True(second.HasBeenProcessed(key));
         }
         finally
         {
@@ -71,6 +93,6 @@ public class ApplicationLedgerTests
 
         var ledger = new ApplicationLedger.ApplicationLedger(path);
 
-        Assert.False(ledger.HasApplied(DedupeKey.Normalize("Acme Corp", "Backend Engineer")));
+        Assert.False(ledger.HasBeenProcessed(DedupeKey.Normalize("Acme Corp", "Backend Engineer")));
     }
 }

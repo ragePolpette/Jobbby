@@ -3,6 +3,7 @@ using GraphEngine;
 using Host.Nodes;
 using JobPostings;
 using Matching;
+using Reporting;
 using Xunit;
 
 namespace Host.Tests;
@@ -31,13 +32,16 @@ public class ScoreMatchNodeTests
 
         // Would throw if MatchStageTwoJudge actually tried to parse it - proves stage two never runs.
         var judge = new MatchStageTwoJudge(new MockLlmClient("not valid judgment json"));
-        var node = new ScoreMatchNode(Cv, judge);
+        var statsCollector = new RunStatsCollector();
+        var node = new ScoreMatchNode(Cv, judge, statsCollector);
 
         var result = await node.ExecuteAsync(NewStateFor(jobPosting));
 
         Assert.Equal(0.0, result.Updates[ScoreMatchNode.MatchConfidenceStateKey]);
         Assert.False((bool)result.Updates[ScoreMatchNode.StageOnePassedStateKey]);
         Assert.False(result.Updates.ContainsKey(ScoreMatchNode.MatchJudgmentReasoningStateKey));
+
+        Assert.Equal(1, statsCollector.BuildReport(DateTimeOffset.UtcNow).RejectedStageOne);
     }
 
     [Fact]
@@ -48,13 +52,16 @@ public class ScoreMatchNodeTests
 
         var judge = new MatchStageTwoJudge(new MockLlmClient(
             """{"category":"Strong","reasoning":"Great fit","confidence":0.88}"""));
-        var node = new ScoreMatchNode(Cv, judge);
+        var statsCollector = new RunStatsCollector();
+        var node = new ScoreMatchNode(Cv, judge, statsCollector);
 
         var result = await node.ExecuteAsync(NewStateFor(jobPosting));
 
         Assert.True((bool)result.Updates[ScoreMatchNode.StageOnePassedStateKey]);
         Assert.Equal(0.88, result.Updates[ScoreMatchNode.MatchConfidenceStateKey]);
         Assert.Equal("Great fit", result.Updates[ScoreMatchNode.MatchJudgmentReasoningStateKey]);
+
+        Assert.Equal(1, statsCollector.BuildReport(DateTimeOffset.UtcNow).StageTwoBreakdown[MatchCategories.Strong]);
     }
 
     [Fact]
@@ -65,7 +72,7 @@ public class ScoreMatchNodeTests
 
         var judge = new MatchStageTwoJudge(new MockLlmClient(
             """{"category":"Weak","reasoning":"Not a fit","confidence":0.9}"""));
-        var node = new ScoreMatchNode(Cv, judge);
+        var node = new ScoreMatchNode(Cv, judge, new RunStatsCollector());
 
         var result = await node.ExecuteAsync(NewStateFor(jobPosting));
 
@@ -77,7 +84,7 @@ public class ScoreMatchNodeTests
     public async Task ExecuteAsync_NoJobPostingInState_Throws()
     {
         var judge = new MatchStageTwoJudge(new MockLlmClient("irrelevant"));
-        var node = new ScoreMatchNode(Cv, judge);
+        var node = new ScoreMatchNode(Cv, judge, new RunStatsCollector());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => node.ExecuteAsync(new GraphState()));
     }

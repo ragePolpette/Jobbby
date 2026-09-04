@@ -1,10 +1,12 @@
 using System.Globalization;
+using ApplicationLedger;
 using CvExtraction;
 using GraphEngine;
 using Host.Nodes;
 using JobPostings;
 using Matching;
 using Notifications;
+using Reporting;
 using Xunit;
 
 namespace Host.Tests;
@@ -64,11 +66,11 @@ public class HostGraphTests
         try
         {
             var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
-            var dedupeKey = ApplicationLedger.DedupeKey.Normalize("Acme", "Backend Engineer");
-            ledger.RecordApplied(new ApplicationLedger.ApplicationRecord(dedupeKey, "Acme", "Backend Engineer", null, DateTimeOffset.UtcNow));
+            var dedupeKey = DedupeKey.Normalize("Acme", "Backend Engineer");
+            ledger.RecordApplied(new ApplicationRecord(dedupeKey, "Acme", "Backend Engineer", null, DateTimeOffset.UtcNow, ApplicationOutcomes.Applied));
 
             var llmClient = NewJudgmentLlmClient(MatchCategories.Strong, 0.9); // never called, dedupe hits first
-            var definition = HostGraph.Build(gateway, registry, ledger, llmClient, DefaultCandidateCv);
+            var definition = HostGraph.Build(gateway, registry, ledger, llmClient, DefaultCandidateCv, new RunStatsCollector());
             var state = NewApplicationState();
 
             var result = await definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
@@ -96,7 +98,7 @@ public class HostGraphTests
             var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
             // Would blow up if actually parsed as a judgment - proves stage two never runs.
             var llmClient = new MockLlmClient("not valid judgment json");
-            var definition = HostGraph.Build(gateway, registry, ledger, llmClient, DefaultCandidateCv);
+            var definition = HostGraph.Build(gateway, registry, ledger, llmClient, DefaultCandidateCv, new RunStatsCollector());
 
             // No overlap with DefaultCandidateCv's skills (C#, .NET).
             var jobPosting = new JobPosting(
@@ -137,7 +139,8 @@ public class HostGraphTests
         {
             var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
             var llmClient = NewJudgmentLlmClient(MatchCategories.Borderline, 0.3);
-            var definition = HostGraph.Build(gateway, registry, ledger, llmClient, DefaultCandidateCv, approvalTimeout: TimeSpan.FromSeconds(5));
+            var definition = HostGraph.Build(
+                gateway, registry, ledger, llmClient, DefaultCandidateCv, new RunStatsCollector(), approvalTimeout: TimeSpan.FromSeconds(5));
             var state = NewApplicationState();
 
             var runTask = definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
@@ -147,9 +150,10 @@ public class HostGraphTests
 
             Assert.Contains("Acme", Assert.Single(gateway.SentMessages));
             Assert.True(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
+            Assert.Equal(ApplicationOutcomes.Applied, state.Get<string>(RecordIfApprovedNode.OutcomeStateKey));
 
-            var dedupeKey = ApplicationLedger.DedupeKey.Normalize("Acme", "Backend Engineer");
-            Assert.True(ledger.HasApplied(dedupeKey));
+            var dedupeKey = DedupeKey.Normalize("Acme", "Backend Engineer");
+            Assert.True(ledger.HasBeenProcessed(dedupeKey));
         }
         finally
         {
@@ -158,7 +162,7 @@ public class HostGraphTests
     }
 
     [Fact]
-    public async Task Rejected_DoesNotRecordApplication()
+    public async Task Rejected_RecordsRejectionOutcomeSoItIsNotReproposedLater()
     {
         var gateway = new MockTelegramGateway();
         var registry = new PendingApprovalRegistry();
@@ -169,7 +173,8 @@ public class HostGraphTests
         {
             var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
             var llmClient = NewJudgmentLlmClient(MatchCategories.Borderline, 0.3);
-            var definition = HostGraph.Build(gateway, registry, ledger, llmClient, DefaultCandidateCv, approvalTimeout: TimeSpan.FromSeconds(5));
+            var definition = HostGraph.Build(
+                gateway, registry, ledger, llmClient, DefaultCandidateCv, new RunStatsCollector(), approvalTimeout: TimeSpan.FromSeconds(5));
             var state = NewApplicationState();
 
             var runTask = definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
@@ -177,10 +182,12 @@ public class HostGraphTests
 
             await runTask;
 
+            // Not "applied", but IS now recorded - a rejection is a terminal outcome too.
             Assert.False(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
+            Assert.Equal(ApplicationOutcomes.Rejected, state.Get<string>(RecordIfApprovedNode.OutcomeStateKey));
 
-            var dedupeKey = ApplicationLedger.DedupeKey.Normalize("Acme", "Backend Engineer");
-            Assert.False(ledger.HasApplied(dedupeKey));
+            var dedupeKey = DedupeKey.Normalize("Acme", "Backend Engineer");
+            Assert.True(ledger.HasBeenProcessed(dedupeKey));
         }
         finally
         {
@@ -189,7 +196,7 @@ public class HostGraphTests
     }
 
     [Fact]
-    public async Task Rejected_ResponseContainingSiAsSubstring_IsNotMisreadAsApproval()
+    public async Task Rejected_ResponseContainingSiAsSubstring_IsNotMisreadAsApproval_ButIsRecordedAsRejected()
     {
         var gateway = new MockTelegramGateway();
         var registry = new PendingApprovalRegistry();
@@ -200,7 +207,8 @@ public class HostGraphTests
         {
             var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
             var llmClient = NewJudgmentLlmClient(MatchCategories.Borderline, 0.3);
-            var definition = HostGraph.Build(gateway, registry, ledger, llmClient, DefaultCandidateCv, approvalTimeout: TimeSpan.FromSeconds(5));
+            var definition = HostGraph.Build(
+                gateway, registry, ledger, llmClient, DefaultCandidateCv, new RunStatsCollector(), approvalTimeout: TimeSpan.FromSeconds(5));
             var state = NewApplicationState();
 
             var runTask = definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
@@ -209,9 +217,12 @@ public class HostGraphTests
             await runTask;
 
             Assert.False(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
+            Assert.Equal(ApplicationOutcomes.Rejected, state.Get<string>(RecordIfApprovedNode.OutcomeStateKey));
 
-            var dedupeKey = ApplicationLedger.DedupeKey.Normalize("Acme", "Backend Engineer");
-            Assert.False(ledger.HasApplied(dedupeKey));
+            // Intentional change from before: a rejection is now recorded, so
+            // HasBeenProcessed is true (it used to be false when only approvals counted).
+            var dedupeKey = DedupeKey.Normalize("Acme", "Backend Engineer");
+            Assert.True(ledger.HasBeenProcessed(dedupeKey));
         }
         finally
         {
@@ -231,7 +242,8 @@ public class HostGraphTests
         {
             var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
             var llmClient = NewJudgmentLlmClient(MatchCategories.Strong, 0.9);
-            var definition = HostGraph.Build(gateway, registry, ledger, llmClient, DefaultCandidateCv, confidenceThreshold: 0.7);
+            var definition = HostGraph.Build(
+                gateway, registry, ledger, llmClient, DefaultCandidateCv, new RunStatsCollector(), confidenceThreshold: 0.7);
             var state = NewApplicationState();
 
             await definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
@@ -240,8 +252,8 @@ public class HostGraphTests
             Assert.True(state.Get<bool>(RecordIfApprovedNode.AutoApprovedStateKey));
             Assert.True(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
 
-            var dedupeKey = ApplicationLedger.DedupeKey.Normalize("Acme", "Backend Engineer");
-            Assert.True(ledger.HasApplied(dedupeKey));
+            var dedupeKey = DedupeKey.Normalize("Acme", "Backend Engineer");
+            Assert.True(ledger.HasBeenProcessed(dedupeKey));
         }
         finally
         {
@@ -261,7 +273,8 @@ public class HostGraphTests
         {
             var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
             var llmClient = NewJudgmentLlmClient(MatchCategories.Strong, 0.7);
-            var definition = HostGraph.Build(gateway, registry, ledger, llmClient, DefaultCandidateCv, confidenceThreshold: 0.7);
+            var definition = HostGraph.Build(
+                gateway, registry, ledger, llmClient, DefaultCandidateCv, new RunStatsCollector(), confidenceThreshold: 0.7);
             var state = NewApplicationState();
 
             await definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
@@ -289,7 +302,8 @@ public class HostGraphTests
             // High confidence in a Weak judgment must still map to 0, not to that confidence.
             var llmClient = NewJudgmentLlmClient(MatchCategories.Weak, 0.95);
             var definition = HostGraph.Build(
-                gateway, registry, ledger, llmClient, DefaultCandidateCv, approvalTimeout: TimeSpan.FromSeconds(5), confidenceThreshold: 0.7);
+                gateway, registry, ledger, llmClient, DefaultCandidateCv, new RunStatsCollector(),
+                approvalTimeout: TimeSpan.FromSeconds(5), confidenceThreshold: 0.7);
             var state = NewApplicationState();
 
             var runTask = definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
@@ -302,8 +316,8 @@ public class HostGraphTests
             Assert.False(state.Get<bool>(RecordIfApprovedNode.AutoApprovedStateKey));
             Assert.True(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
 
-            var dedupeKey = ApplicationLedger.DedupeKey.Normalize("Acme", "Backend Engineer");
-            Assert.True(ledger.HasApplied(dedupeKey));
+            var dedupeKey = DedupeKey.Normalize("Acme", "Backend Engineer");
+            Assert.True(ledger.HasBeenProcessed(dedupeKey));
         }
         finally
         {
@@ -312,7 +326,7 @@ public class HostGraphTests
     }
 
     [Fact]
-    public async Task LowConfidence_TimeoutStillSkipsWithoutRecordingOrAutoApproving()
+    public async Task LowConfidence_TimeoutRecordsTimedOutOutcome_WithoutAutoApproving()
     {
         var gateway = new MockTelegramGateway();
         var registry = new PendingApprovalRegistry();
@@ -324,7 +338,8 @@ public class HostGraphTests
             var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
             var llmClient = NewJudgmentLlmClient(MatchCategories.Borderline, 0.1);
             var definition = HostGraph.Build(
-                gateway, registry, ledger, llmClient, DefaultCandidateCv, approvalTimeout: TimeSpan.FromMilliseconds(50), confidenceThreshold: 0.7);
+                gateway, registry, ledger, llmClient, DefaultCandidateCv, new RunStatsCollector(),
+                approvalTimeout: TimeSpan.FromMilliseconds(50), confidenceThreshold: 0.7);
             var state = NewApplicationState();
 
             await definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
@@ -332,6 +347,11 @@ public class HostGraphTests
             Assert.Equal(HumanInputNode.SkippedNoResponseOutcome, state.Get<string>(AskApprovalNode.OutcomeStateKey));
             Assert.False(state.Get<bool>(RecordIfApprovedNode.AutoApprovedStateKey));
             Assert.False(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
+            Assert.Equal(ApplicationOutcomes.TimedOut, state.Get<string>(RecordIfApprovedNode.OutcomeStateKey));
+
+            // A timeout is a terminal outcome too, recorded so it isn't re-proposed forever.
+            var dedupeKey = DedupeKey.Normalize("Acme", "Backend Engineer");
+            Assert.True(ledger.HasBeenProcessed(dedupeKey));
         }
         finally
         {
@@ -357,7 +377,8 @@ public class HostGraphTests
             const string judgmentJson = """{"category":"Strong","reasoning":"Great overlap","confidence":0.95}""";
             var llmClient = new MockLlmClient(new[] { extractionJson, judgmentJson });
 
-            var definition = HostGraph.Build(gateway, registry, ledger, llmClient, DefaultCandidateCv, confidenceThreshold: 0.7);
+            var definition = HostGraph.Build(
+                gateway, registry, ledger, llmClient, DefaultCandidateCv, new RunStatsCollector(), confidenceThreshold: 0.7);
 
             var rawPosting = new RawPosting(
                 "Backend Engineer", "Ottima opportunita in C#", "https://apply.example/jobs/1", "apply.example");
@@ -380,8 +401,45 @@ public class HostGraphTests
             Assert.True(state.Get<bool>(RecordIfApprovedNode.AutoApprovedStateKey));
             Assert.True(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
 
-            var dedupeKey = ApplicationLedger.DedupeKey.Normalize("Acme Corp", "Backend Engineer");
-            Assert.True(ledger.HasApplied(dedupeKey));
+            var dedupeKey = DedupeKey.Normalize("Acme Corp", "Backend Engineer");
+            Assert.True(ledger.HasBeenProcessed(dedupeKey));
+        }
+        finally
+        {
+            File.Delete(ledgerPath);
+        }
+    }
+
+    [Fact]
+    public async Task AfterRejection_SamePostingInASecondRun_IsDiscardedByDedupeCheck()
+    {
+        var gateway = new MockTelegramGateway();
+        var registry = new PendingApprovalRegistry();
+        gateway.ReplyReceived += registry.OnReply;
+
+        var ledgerPath = NewLedgerPath();
+        try
+        {
+            var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
+            var llmClient = NewJudgmentLlmClient(MatchCategories.Borderline, 0.3);
+            var definition = HostGraph.Build(
+                gateway, registry, ledger, llmClient, DefaultCandidateCv, new RunStatsCollector(), approvalTimeout: TimeSpan.FromSeconds(5));
+
+            // First run: a human rejects it via Telegram.
+            var firstState = NewApplicationState();
+            var firstRunTask = definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, firstState);
+            gateway.SimulateReply(1, "no grazie");
+            await firstRunTask;
+
+            Assert.Equal(ApplicationOutcomes.Rejected, firstState.Get<string>(RecordIfApprovedNode.OutcomeStateKey));
+
+            // Second run: the exact same posting (same Company/Title) comes around again.
+            var secondState = NewApplicationState();
+            var secondResult = await definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, secondState);
+
+            Assert.Equal(1, secondResult.StepsExecuted); // DedupeCheck only, then END
+            Assert.True(secondState.Get<bool>(DedupeCheckNode.AlreadyAppliedStateKey));
+            Assert.Single(gateway.SentMessages); // only the first run's message - never asked again
         }
         finally
         {

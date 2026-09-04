@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Config;
+using Reporting;
 
 namespace JobPostings;
 
@@ -52,12 +53,23 @@ public sealed class AdzunaJobSource : IJobSource
         return new AdzunaJobSource(httpClient, appId, appKey, resultsPerPage);
     }
 
-    public async Task<IReadOnlyList<RawPosting>> FetchAsync(SourceDefinition source, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<RawPosting>> FetchAsync(
+        SourceDefinition source, SourceCursor? cursor = null, CancellationToken cancellationToken = default)
     {
         // SourceDefinition has no dedicated search-query field, so a whitelist entry's
         // Name doubles as the Adzuna "what" keyword - configurable per source.
         var url = $"{SearchEndpoint}?app_id={Uri.EscapeDataString(_appId)}&app_key={Uri.EscapeDataString(_appKey)}" +
                   $"&what={Uri.EscapeDataString(source.Name)}&results_per_page={_resultsPerPage}&content-type=application/json";
+
+        if (cursor is not null)
+        {
+            // Adzuna's search endpoint filters by listing age via max_days_old (days
+            // since posted), not by a since-this-id/timestamp cursor - so the previous
+            // cursor's LastRunAt becomes "how many days ago was that", rounded up so a
+            // sub-day gap between runs still asks for at least today's listings.
+            var daysSinceLastRun = Math.Max(1, (int)Math.Ceiling((DateTimeOffset.UtcNow - cursor.LastRunAt).TotalDays));
+            url += $"&max_days_old={daysSinceLastRun}";
+        }
 
         using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
@@ -86,6 +98,11 @@ public sealed class AdzunaJobSource : IJobSource
 
                 postings.Add(new RawPosting(title, description, applyUrl, sourceDomain, company));
             }
+
+            // Best-effort dedup aid alongside max_days_old: drop the one posting we know
+            // for certain we already saw last time, in case of overlap at the day boundary.
+            if (cursor is not null && !string.IsNullOrEmpty(cursor.LastSeenIdentifier))
+                postings.RemoveAll(p => p.ApplyUrl == cursor.LastSeenIdentifier);
 
             return postings;
         }

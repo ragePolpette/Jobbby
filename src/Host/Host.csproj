@@ -7,6 +7,7 @@
     <ProjectReference Include="..\CvExtraction\CvExtraction.csproj" />
     <ProjectReference Include="..\JobPostings\JobPostings.csproj" />
     <ProjectReference Include="..\Matching\Matching.csproj" />
+    <ProjectReference Include="..\Reporting\Reporting.csproj" />
   </ItemGroup>
 
   <ItemGroup>

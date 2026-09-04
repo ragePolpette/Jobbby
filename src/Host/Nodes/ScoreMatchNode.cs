@@ -2,6 +2,7 @@ using CvExtraction;
 using GraphEngine;
 using JobPostings;
 using Matching;
+using Reporting;
 
 namespace Host.Nodes;
 
@@ -22,11 +23,13 @@ public sealed class ScoreMatchNode : INode
 
     private readonly CvData _candidateCv;
     private readonly MatchStageTwoJudge _stageTwoJudge;
+    private readonly RunStatsCollector _statsCollector;
 
-    public ScoreMatchNode(CvData candidateCv, MatchStageTwoJudge stageTwoJudge)
+    public ScoreMatchNode(CvData candidateCv, MatchStageTwoJudge stageTwoJudge, RunStatsCollector statsCollector)
     {
         _candidateCv = candidateCv;
         _stageTwoJudge = stageTwoJudge;
+        _statsCollector = statsCollector;
     }
 
     public async Task<NodeResult> ExecuteAsync(GraphState state)
@@ -38,6 +41,8 @@ public sealed class ScoreMatchNode : INode
 
         if (!stageOnePassed)
         {
+            _statsCollector.IncrementRejectedStageOne();
+
             return NodeResult.From(new Dictionary<string, object>
             {
                 [MatchConfidenceStateKey] = 0.0,
@@ -48,6 +53,8 @@ public sealed class ScoreMatchNode : INode
 
         var judgment = await _stageTwoJudge.JudgeAsync(jobPosting, _candidateCv).ConfigureAwait(false);
         var matchConfidence = MatchConfidenceMapper.ToMatchConfidence(judgment);
+
+        _statsCollector.IncrementStageTwoCategory(judgment.Category);
 
         return NodeResult.From(new Dictionary<string, object>
         {
