@@ -14,7 +14,8 @@ public class AdzunaJobSourceTests
               "title": "Backend Engineer",
               "description": "Sviluppo di API in C# e .NET",
               "redirect_url": "https://www.adzuna.it/land/ad/12345",
-              "company": { "display_name": "Acme Corp" }
+              "company": { "display_name": "Acme Corp" },
+              "created": "2026-01-05T10:00:00Z"
             },
             {
               "title": "Frontend Developer",
@@ -53,10 +54,12 @@ public class AdzunaJobSourceTests
         Assert.Equal("https://www.adzuna.it/land/ad/12345", postings[0].ApplyUrl);
         Assert.Equal("api.adzuna.com", postings[0].SourceDomain); // host of the source's own BaseUrl
         Assert.Equal("Acme Corp", postings[0].Company); // company.display_name
+        Assert.Equal(new DateTimeOffset(2026, 1, 5, 10, 0, 0, TimeSpan.Zero), postings[0].PostedAt); // "created"
 
         Assert.Equal("Frontend Developer", postings[1].RawTitle);
         Assert.Equal("mailto:hr@example.com", postings[1].ApplyUrl);
         Assert.Equal(string.Empty, postings[1].Company); // no "company" object in this result
+        Assert.Null(postings[1].PostedAt); // no "created" field in this result
     }
 
     [Fact]
@@ -92,6 +95,7 @@ public class AdzunaJobSourceTests
         Assert.Contains("app_key=my-app-key", query);
         Assert.Contains("what=sviluppatore", query); // Uri-escaped source.Name
         Assert.Contains("results_per_page=10", query); // default cap
+        Assert.Contains("sort_by=date", query); // newest first
         Assert.StartsWith("https://api.adzuna.com/v1/api/jobs/it/search/1", capturedRequest.RequestUri!.ToString());
     }
 

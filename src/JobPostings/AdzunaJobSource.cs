@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Config;
 using Reporting;
@@ -58,8 +59,9 @@ public sealed class AdzunaJobSource : IJobSource
     {
         // SourceDefinition has no dedicated search-query field, so a whitelist entry's
         // Name doubles as the Adzuna "what" keyword - configurable per source.
+        // sort_by=date asks Adzuna itself to order results newest-first.
         var url = $"{SearchEndpoint}?app_id={Uri.EscapeDataString(_appId)}&app_key={Uri.EscapeDataString(_appKey)}" +
-                  $"&what={Uri.EscapeDataString(source.Name)}&results_per_page={_resultsPerPage}&content-type=application/json";
+                  $"&what={Uri.EscapeDataString(source.Name)}&results_per_page={_resultsPerPage}&sort_by=date&content-type=application/json";
 
         if (cursor is not null)
         {
@@ -95,8 +97,9 @@ public sealed class AdzunaJobSource : IJobSource
                 var description = GetStringOrEmpty(result, "description");
                 var applyUrl = GetStringOrEmpty(result, "redirect_url");
                 var company = GetCompanyDisplayName(result);
+                var postedAt = GetCreatedAt(result);
 
-                postings.Add(new RawPosting(title, description, applyUrl, sourceDomain, company));
+                postings.Add(new RawPosting(title, description, applyUrl, sourceDomain, company, postedAt));
             }
 
             // Best-effort dedup aid alongside max_days_old: drop the one posting we know
@@ -117,4 +120,12 @@ public sealed class AdzunaJobSource : IJobSource
         result.TryGetProperty("company", out var company)
             ? GetStringOrEmpty(company, "display_name")
             : string.Empty;
+
+    // Adzuna's "created" field is an ISO 8601 UTC timestamp, e.g. "2013-11-08T18:07:39Z"
+    // (see https://developer.adzuna.com/docs/search), marking when the ad was posted.
+    private static DateTimeOffset? GetCreatedAt(JsonElement result) =>
+        result.TryGetProperty("created", out var created) &&
+        DateTimeOffset.TryParse(created.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
+            ? parsed
+            : null;
 }

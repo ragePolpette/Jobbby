@@ -113,10 +113,7 @@ static async Task<SourceCursor?> RunForSourceAsync(
     var postingRuns = rawPostings.Select(rawPosting => RunForPostingAsync(definition, source, rawPosting, statsCollector));
     await Task.WhenAll(postingRuns);
 
-    // Best-effort "most recent" bookmark: Adzuna's default ordering isn't guaranteed
-    // chronological, so this - combined with max_days_old on the next fetch - is a
-    // reasonable approximation, not a precise cursor.
-    return new SourceCursor(source.Name, rawPostings[0].ApplyUrl, DateTimeOffset.UtcNow);
+    return CursorSelection.SelectMostRecent(source.Name, rawPostings, DateTimeOffset.UtcNow);
 }
 
 static async Task RunForPostingAsync(GraphDefinition definition, SourceDefinition source, RawPosting rawPosting, RunStatsCollector statsCollector)
