@@ -46,4 +46,13 @@ public sealed record CvData
 
     [JsonPropertyName("languages")]
     public List<string> Languages { get; init; } = new();
+
+    [JsonPropertyName("desiredLocations")]
+    public List<string> DesiredLocations { get; init; } = new();
+
+    [JsonPropertyName("acceptsRemote")]
+    public bool AcceptsRemote { get; init; } = true;
+
+    [JsonPropertyName("minimumSalary")]
+    public decimal? MinimumSalary { get; init; }
 }
