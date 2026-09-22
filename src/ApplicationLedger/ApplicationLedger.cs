@@ -38,7 +38,7 @@ public sealed class ApplicationLedger
     {
         lock (_lock)
         {
-            return _records.Any(r => r.DedupeKey == dedupeKey);
+            return _records.Any(r => r.DedupeKey == dedupeKey && ApplicationOutcomes.IsTerminal(r.Outcome));
         }
     }
 
@@ -47,7 +47,7 @@ public sealed class ApplicationLedger
     /// single ledger instance can be shared across concurrent <c>GraphRun</c>s (e.g. one
     /// per source), each potentially recording around the same time.
     /// </summary>
-    public void RecordApplied(ApplicationRecord record)
+    public void RecordOutcome(ApplicationRecord record)
     {
         lock (_lock)
         {

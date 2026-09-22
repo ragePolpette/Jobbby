@@ -41,7 +41,7 @@ public sealed class RecordIfApprovedNode : INode
         string outcome;
         if (autoApproved || repliedYes)
         {
-            outcome = ApplicationOutcomes.Applied;
+            outcome = autoApproved ? ApplicationOutcomes.Shortlisted : ApplicationOutcomes.Approved;
             if (autoApproved)
                 _statsCollector.IncrementAutoApproved();
             else
@@ -49,7 +49,7 @@ public sealed class RecordIfApprovedNode : INode
         }
         else if (timedOut)
         {
-            outcome = ApplicationOutcomes.TimedOut;
+            outcome = ApplicationOutcomes.Discovered;
             _statsCollector.IncrementTimedOut();
         }
         else
@@ -63,11 +63,11 @@ public sealed class RecordIfApprovedNode : INode
         var dedupeKey = state.Get<string>(DedupeCheckNode.DedupeKeyStateKey) ?? DedupeKey.Normalize(company, title);
         var sourceUrl = state.Get<string>(JobApplicationStateKeys.SourceUrl);
 
-        _ledger.RecordApplied(new ApplicationRecord(dedupeKey, company, title, sourceUrl, DateTimeOffset.UtcNow, outcome));
+        _ledger.RecordOutcome(new ApplicationRecord(dedupeKey, company, title, sourceUrl, DateTimeOffset.UtcNow, outcome));
 
         return Task.FromResult(NodeResult.From(new Dictionary<string, object>
         {
-            [RecordedStateKey] = outcome == ApplicationOutcomes.Applied,
+            [RecordedStateKey] = outcome is ApplicationOutcomes.Shortlisted or ApplicationOutcomes.Approved or ApplicationOutcomes.Applied,
             [OutcomeStateKey] = outcome,
         }));
     }

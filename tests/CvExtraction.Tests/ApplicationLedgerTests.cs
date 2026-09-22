@@ -16,7 +16,7 @@ public class ApplicationLedgerTests
 
             Assert.False(ledger.HasBeenProcessed(key));
 
-            ledger.RecordApplied(new ApplicationRecord(
+            ledger.RecordOutcome(new ApplicationRecord(
                 key, "Acme Corp", "Backend Engineer", "https://acme.example/job/1", DateTimeOffset.UtcNow, ApplicationOutcomes.Applied));
 
             Assert.True(ledger.HasBeenProcessed(key));
@@ -36,7 +36,7 @@ public class ApplicationLedgerTests
             var ledger = new ApplicationLedger.ApplicationLedger(path);
             var key = DedupeKey.Normalize("Acme Corp", "Backend Engineer");
 
-            ledger.RecordApplied(new ApplicationRecord(
+            ledger.RecordOutcome(new ApplicationRecord(
                 key, "Acme Corp", "Backend Engineer", null, DateTimeOffset.UtcNow, ApplicationOutcomes.Rejected));
 
             Assert.True(ledger.HasBeenProcessed(key));
@@ -72,7 +72,7 @@ public class ApplicationLedgerTests
         {
             var key = DedupeKey.Normalize("Acme Corp", "Backend Engineer");
             var first = new ApplicationLedger.ApplicationLedger(path);
-            first.RecordApplied(new ApplicationRecord(
+            first.RecordOutcome(new ApplicationRecord(
                 key, "Acme Corp", "Backend Engineer", null, DateTimeOffset.UtcNow, ApplicationOutcomes.Applied));
 
             var second = new ApplicationLedger.ApplicationLedger(path);
