@@ -13,10 +13,11 @@ using Reporting;
 // AddUserSecrets<Program>() is where `dotnet user-secrets set <key> <value>` values
 // actually surface in development; AddEnvironmentVariables() is what production sets
 // instead. SourceWhitelist.ResolveSecret reads from whichever of the two has the key.
-SourceWhitelist.Configuration = new ConfigurationBuilder()
+var configuration = new ConfigurationBuilder()
     .AddEnvironmentVariables()
     .AddUserSecrets<Program>()
     .Build();
+SourceWhitelist.Configuration = configuration;
 
 using var httpClient = new HttpClient();
 
@@ -35,11 +36,10 @@ Console.WriteLine($"Loaded {sources.Count} source(s) from {sourcesPath}");
 var cursorsBySource = RunReportStore.LoadCursors(cursorsPath);
 Console.WriteLine($"Loaded {cursorsBySource.Count} source cursor(s) from {cursorsPath}");
 
-// Real extraction/judging still await a wired provider; MockLlmClient keeps
-// NormalizeJobPosting and ScoreMatch's stage-two judge runnable end-to-end until then.
-ILlmClient llmClient = new MockLlmClient("""
-    {"company":"","seniorityLevel":"","requiredStack":[]}
-    """);
+var llmEndpoint = configuration["Llm:Endpoint"] ?? throw new InvalidOperationException("Missing Llm:Endpoint configuration.");
+var llmApiKey = configuration["Llm:ApiKey"] ?? throw new InvalidOperationException("Missing Llm:ApiKey secret.");
+var llmModel = configuration["Llm:Model"] ?? throw new InvalidOperationException("Missing Llm:Model configuration.");
+ILlmClient llmClient = new OpenAiCompatibleLlmClient(httpClient, llmEndpoint, llmApiKey, llmModel);
 
 var candidateCv = await CvLoader.LoadAsync(cvPath, llmClient);
 Console.WriteLine($"Loaded candidate CV for {candidateCv.Name} ({candidateCv.YearsExperience}y, {candidateCv.Seniority})");
