@@ -13,7 +13,13 @@ public sealed record JobPosting(
     string Description,
     string SourceUrl,
     string ApplyUrl,
-    string ApplyChannel);
+    string ApplyChannel,
+    List<string>? MustHaveStack = null,
+    List<string>? PreferredStack = null,
+    string? Location = null,
+    bool? RemoteAvailable = null,
+    decimal? SalaryMaximum = null,
+    List<string>? RequiredLanguages = null);
 
 /// <summary>Valid values for <see cref="JobPosting.ApplyChannel"/>.</summary>
 public static class ApplyChannels

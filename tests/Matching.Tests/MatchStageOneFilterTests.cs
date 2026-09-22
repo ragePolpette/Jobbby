@@ -115,6 +115,66 @@ public class MatchStageOneFilterTests
     }
 
     [Fact]
+    public void Evaluate_MissingMustHaveSkill_FailsAndExplainsRequirement()
+    {
+        var posting = NewPosting(new[] { "C#" }, "Mid") with { MustHaveStack = new List<string> { "Kubernetes" } };
+        var cv = NewCv(4, skills: new[] { "C#" });
+
+        var result = MatchStageOneFilter.Evaluate(posting, cv);
+
+        Assert.False(result.Passes);
+        Assert.Contains("Kubernetes", result.MissingRequirements);
+    }
+
+    [Fact]
+    public void Evaluate_MissingPreferredSkill_PassesWithWarning()
+    {
+        var posting = NewPosting(new[] { "C#" }, "Mid") with { PreferredStack = new List<string> { "Azure" } };
+        var cv = NewCv(4, skills: new[] { "C#" });
+
+        var result = MatchStageOneFilter.Evaluate(posting, cv);
+
+        Assert.True(result.Passes);
+        Assert.Contains(result.PreferenceWarnings, warning => warning.Contains("Azure"));
+    }
+
+    [Fact]
+    public void Evaluate_OnSiteOutsideDesiredLocations_Fails()
+    {
+        var posting = NewPosting(new[] { "C#" }, "Mid") with { Location = "Roma", RemoteAvailable = false };
+        var cv = NewCv(4, skills: new[] { "C#" }) with { DesiredLocations = new List<string> { "Milano" } };
+
+        var result = MatchStageOneFilter.Evaluate(posting, cv);
+
+        Assert.False(result.Passes);
+        Assert.Contains(result.MissingRequirements, requirement => requirement.Contains("Roma"));
+    }
+
+    [Fact]
+    public void Evaluate_SalaryBelowMinimum_Fails()
+    {
+        var posting = NewPosting(new[] { "C#" }, "Mid") with { SalaryMaximum = 40000 };
+        var cv = NewCv(4, skills: new[] { "C#" }) with { MinimumSalary = 45000 };
+
+        var result = MatchStageOneFilter.Evaluate(posting, cv);
+
+        Assert.False(result.Passes);
+        Assert.Contains(result.MissingRequirements, requirement => requirement.Contains("RAL"));
+    }
+
+    [Fact]
+    public void Evaluate_MissingRequiredLanguage_Fails()
+    {
+        var posting = NewPosting(new[] { "C#" }, "Mid") with { RequiredLanguages = new List<string> { "German" } };
+        var cv = NewCv(4, skills: new[] { "C#" });
+
+        var result = MatchStageOneFilter.Evaluate(posting, cv);
+
+        Assert.False(result.Passes);
+        Assert.Contains("Lingua: German", result.MissingRequirements);
+    }
+
+    [Fact]
     public void Evaluate_BothStackAndSeniorityFail_ReportsStackReasonFirst()
     {
         var posting = NewPosting(new[] { "Rust" }, "Staff");

@@ -20,6 +20,8 @@ public sealed class ScoreMatchNode : INode
     public const string StageOnePassedStateKey = "StageOnePassed";
     public const string StageOneReasonStateKey = "StageOneReason";
     public const string MatchJudgmentReasoningStateKey = "MatchJudgmentReasoning";
+    public const string MissingRequirementsStateKey = "MissingRequirements";
+    public const string PreferenceWarningsStateKey = "PreferenceWarnings";
 
     private readonly CvData _candidateCv;
     private readonly MatchStageTwoJudge _stageTwoJudge;
@@ -37,7 +39,9 @@ public sealed class ScoreMatchNode : INode
         var jobPosting = state.Get<JobPosting>(NormalizeJobPostingNode.JobPostingStateKey)
             ?? throw new InvalidOperationException($"No JobPosting found in state under '{NormalizeJobPostingNode.JobPostingStateKey}'.");
 
-        var (stageOnePassed, stageOneReason) = MatchStageOneFilter.Evaluate(jobPosting, _candidateCv);
+        var stageOne = MatchStageOneFilter.Evaluate(jobPosting, _candidateCv);
+        var stageOnePassed = stageOne.Passes;
+        var stageOneReason = stageOne.Reason;
 
         if (!stageOnePassed)
         {
@@ -48,6 +52,8 @@ public sealed class ScoreMatchNode : INode
                 [MatchConfidenceStateKey] = 0.0,
                 [StageOnePassedStateKey] = false,
                 [StageOneReasonStateKey] = stageOneReason,
+                [MissingRequirementsStateKey] = stageOne.MissingRequirements,
+                [PreferenceWarningsStateKey] = stageOne.PreferenceWarnings,
             });
         }
 
@@ -62,6 +68,8 @@ public sealed class ScoreMatchNode : INode
             [StageOnePassedStateKey] = true,
             [StageOneReasonStateKey] = stageOneReason,
             [MatchJudgmentReasoningStateKey] = judgment.Reasoning,
+            [MissingRequirementsStateKey] = stageOne.MissingRequirements,
+            [PreferenceWarningsStateKey] = stageOne.PreferenceWarnings,
         });
     }
 }
