@@ -1,9 +1,12 @@
 namespace ApplicationLedger;
 
-/// <summary>Valid values for <see cref="ApplicationRecord.Outcome"/>.</summary>
 public static class ApplicationOutcomes
 {
-    public const string Applied = "Applied";
+    public const string Discovered = "Discovered";
     public const string Rejected = "Rejected";
-    public const string TimedOut = "TimedOut";
+    public const string Shortlisted = "Shortlisted";
+    public const string Approved = "Approved";
+    public const string Applied = "Applied";
+
+    public static bool IsTerminal(string outcome) => outcome is Rejected or Shortlisted or Approved or Applied;
 }

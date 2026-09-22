@@ -67,7 +67,7 @@ public class HostGraphTests
         {
             var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
             var dedupeKey = DedupeKey.Normalize("Acme", "Backend Engineer");
-            ledger.RecordApplied(new ApplicationRecord(dedupeKey, "Acme", "Backend Engineer", null, DateTimeOffset.UtcNow, ApplicationOutcomes.Applied));
+            ledger.RecordOutcome(new ApplicationRecord(dedupeKey, "Acme", "Backend Engineer", null, DateTimeOffset.UtcNow, ApplicationOutcomes.Applied));
 
             var llmClient = NewJudgmentLlmClient(MatchCategories.Strong, 0.9); // never called, dedupe hits first
             var definition = HostGraph.Build(gateway, registry, ledger, llmClient, DefaultCandidateCv, new RunStatsCollector());
@@ -150,7 +150,7 @@ public class HostGraphTests
 
             Assert.Contains("Acme", Assert.Single(gateway.SentMessages));
             Assert.True(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
-            Assert.Equal(ApplicationOutcomes.Applied, state.Get<string>(RecordIfApprovedNode.OutcomeStateKey));
+            Assert.Equal(ApplicationOutcomes.Approved, state.Get<string>(RecordIfApprovedNode.OutcomeStateKey));
 
             var dedupeKey = DedupeKey.Normalize("Acme", "Backend Engineer");
             Assert.True(ledger.HasBeenProcessed(dedupeKey));
@@ -347,11 +347,11 @@ public class HostGraphTests
             Assert.Equal(HumanInputNode.SkippedNoResponseOutcome, state.Get<string>(AskApprovalNode.OutcomeStateKey));
             Assert.False(state.Get<bool>(RecordIfApprovedNode.AutoApprovedStateKey));
             Assert.False(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));
-            Assert.Equal(ApplicationOutcomes.TimedOut, state.Get<string>(RecordIfApprovedNode.OutcomeStateKey));
+            Assert.Equal(ApplicationOutcomes.Discovered, state.Get<string>(RecordIfApprovedNode.OutcomeStateKey));
 
             // A timeout is a terminal outcome too, recorded so it isn't re-proposed forever.
             var dedupeKey = DedupeKey.Normalize("Acme", "Backend Engineer");
-            Assert.True(ledger.HasBeenProcessed(dedupeKey));
+            Assert.False(ledger.HasBeenProcessed(dedupeKey));
         }
         finally
         {
