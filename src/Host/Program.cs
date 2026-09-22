@@ -1,5 +1,6 @@
 using Config;
 using CvExtraction;
+using Discovery;
 using GraphEngine;
 using Host;
 using Host.Nodes;
@@ -49,6 +50,20 @@ gateway.Start();
 
 var registry = new PendingApprovalRegistry();
 gateway.ReplyReceived += registry.OnReply;
+
+var discoveryPath = Environment.GetEnvironmentVariable("JOBBBY_DISCOVERY_CONFIG");
+if (!string.IsNullOrWhiteSpace(discoveryPath))
+{
+    var criteria = ConfigLoader.Load<DiscoveryCriteria>(discoveryPath);
+    var reviewService = new DiscoveryReviewService(
+        new DiscoveryEngine(BraveSearchClient.FromEnvironment(httpClient), llmClient),
+        gateway,
+        registry);
+    var review = await reviewService.DiscoverAndReviewAsync(criteria);
+    var approvedPath = Path.Combine(AppContext.BaseDirectory, "approved-sources.json");
+    ApprovedSourceStore.SaveApproved(approvedPath, review.ApprovedSources);
+    Console.WriteLine($"Approved {review.ApprovedSources.Count} discovered source(s).");
+}
 
 var ledger = new ApplicationLedger.ApplicationLedger(applicationsPath);
 var statsCollector = new RunStatsCollector();
