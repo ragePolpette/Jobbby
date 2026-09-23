@@ -7,3 +7,9 @@ obj/
 secrets.json
 *.secrets.json
 appsettings.*.local.json
+
+dry-run-*.json
+applications.json
+cursors.json
+run-reports.json
+approved-sources.json

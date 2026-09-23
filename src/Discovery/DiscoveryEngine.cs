@@ -30,15 +30,19 @@ public sealed class DiscoveryEngine
 
     public async Task<IReadOnlyList<DiscoveryCandidate>> DiscoverAsync(
         DiscoveryCriteria criteria,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? maxCandidates = null)
     {
         var initialResults = await _webSearchClient
             .SearchAsync(criteria.SearchIntent, cancellationToken)
             .ConfigureAwait(false);
 
         var candidates = new List<DiscoveryCandidate>();
+        var selectedResults = maxCandidates is null
+            ? initialResults
+            : initialResults.Take(Math.Max(0, maxCandidates.Value)).ToList();
 
-        foreach (var initialResult in initialResults)
+        foreach (var initialResult in selectedResults)
         {
             var reputationQuery = $"{criteria.EvaluationCriteria} {initialResult.Title}";
             var reputationResults = await _webSearchClient

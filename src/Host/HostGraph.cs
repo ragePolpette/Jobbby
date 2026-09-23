@@ -31,7 +31,8 @@ public static class HostGraph
         RunStatsCollector statsCollector,
         int maxSteps = 10,
         TimeSpan? approvalTimeout = null,
-        double confidenceThreshold = 0.7)
+        double confidenceThreshold = 0.7,
+        bool dryRun = false)
     {
         var definition = new GraphDefinition(maxSteps);
 
@@ -52,6 +53,9 @@ public static class HostGraph
             // threshold-based routing below (which is otherwise unchanged): it never
             // reaches AskApproval/Telegram at all.
             if (!state.Get<bool>(ScoreMatchNode.StageOnePassedStateKey))
+                return GraphDefinition.End;
+
+            if (dryRun)
                 return GraphDefinition.End;
 
             var confidence = state.Get<double>(ScoreMatchNode.MatchConfidenceStateKey);

@@ -89,6 +89,32 @@ public class DiscoveryEngineTests
     }
 
     [Fact]
+    public async Task DiscoverAsync_MaxCandidates_LimitsReputationSearchesAndEvaluations()
+    {
+        var initial = new[]
+        {
+            new SearchResult("One", "https://one.example", "one"),
+            new SearchResult("Two", "https://two.example", "two"),
+            new SearchResult("Three", "https://three.example", "three"),
+        };
+        var search = new MockWebSearchClient(query => query == "fonti" ? initial : Array.Empty<SearchResult>());
+        var llm = new MockLlmClient(new[]
+        {
+            """{"evaluationSummary":"ok","reliabilityScore":8}""",
+            """{"evaluationSummary":"ok","reliabilityScore":8}""",
+        });
+        var engine = new DiscoveryEngine(search, llm);
+
+        var candidates = await engine.DiscoverAsync(
+            new DiscoveryCriteria { SearchIntent = "fonti", EvaluationCriteria = "reputation" },
+            maxCandidates: 2);
+
+        Assert.Equal(2, candidates.Count);
+        Assert.Equal(3, search.Queries.Count);
+        Assert.DoesNotContain(search.Queries, query => query.Contains("Three"));
+    }
+
+    [Fact]
     public async Task DiscoverAsync_NoCandidatesFound_ReturnsEmptyListAndSkipsReputationSearch()
     {
         var criteria = new DiscoveryCriteria { SearchIntent = "qualcosa di introvabile", EvaluationCriteria = "n/a" };

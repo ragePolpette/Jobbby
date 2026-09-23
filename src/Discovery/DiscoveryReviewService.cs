@@ -31,9 +31,10 @@ public sealed class DiscoveryReviewService
 
     public async Task<DiscoveryReviewResult> DiscoverAndReviewAsync(
         DiscoveryCriteria criteria,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? maxCandidates = null)
     {
-        var candidates = await _engine.DiscoverAsync(criteria, cancellationToken).ConfigureAwait(false);
+        var candidates = await _engine.DiscoverAsync(criteria, cancellationToken, maxCandidates).ConfigureAwait(false);
         var approved = new List<SourceDefinition>();
 
         foreach (var candidate in candidates.Where(candidate => candidate.ReliabilityScore >= _minimumReliabilityScore))
