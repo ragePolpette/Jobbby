@@ -39,12 +39,12 @@ public class SourceWhitelistTests
         var fromJson = SourceWhitelist.LoadFromFile(jsonPath);
         var fromYaml = SourceWhitelist.LoadFromFile(yamlPath);
 
-        Assert.Equal(3, fromYaml.Count);
+        Assert.Single(fromYaml);
         Assert.Equal(fromJson, fromYaml);
 
-        var linkedIn = fromYaml.Single(s => s.Name == "LinkedInJobs");
-        Assert.True(linkedIn.RequiresAuth);
-        Assert.Equal("LinkedInJobs:ApiKey", linkedIn.AuthSecretKey);
+        var adzuna = fromYaml.Single(s => s.Name == "Adzuna");
+        Assert.True(adzuna.RequiresAuth);
+        Assert.Equal("Adzuna:AppKey", adzuna.AuthSecretKey);
     }
 
     [Fact]

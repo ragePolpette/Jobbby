@@ -2,6 +2,22 @@
 
 Jobbby raccoglie annunci, li normalizza con un LLM, valuta la compatibilità con il CV e conserva gli esiti operativi.
 
+## Ricerche e CV
+
+Le fonti (`src/Config/sources.json`) dicono *dove* cercare, le ricerche (`src/Config/searches.json`) *cosa*: ogni query viene eseguita su ogni fonte.
+
+```json
+{
+  "queries": [".NET developer", "AI engineer"],
+  "deriveFromCv": true,
+  "maxDerivedQueries": 3
+}
+```
+
+Con `deriveFromCv` l'LLM aggiunge fino a `maxDerivedQueries` (massimo 10) ruoli ricavati dal CV, senza ripetere quelli già configurati. Se la derivazione fallisce si usano solo le query configurate. Gli annunci restituiti da più query vengono valutati una volta sola, e ogni coppia fonte/query ha il proprio cursore. Un file diverso può essere indicato con `Jobbby__SearchesConfig`.
+
+Il CV predefinito è `src/Host/cv.json`. Per usare un PDF, tenuto fuori dal repository, indicarne il percorso con `Jobbby__CvPath=/percorso/cv.pdf`: il testo viene estratto e strutturato dall'LLM a ogni esecuzione.
+
 ## Dry run sicura
 
 La dry run usa Adzuna e il provider LLM reali, ma non:
@@ -49,4 +65,4 @@ Jobbby__DiscoveryConfig=/percorso/discovery.json
 
 Il log JSON dettagliato viene creato nella directory di output del programma con nome `dry-run-YYYYMMDD-HHMMSS.json`. Un percorso diverso può essere indicato tramite `Jobbby__DryRunLogPath`. Il log include configurazione non segreta, fonti interrogate, quantità restituite e processate, normalizzazione, requisiti mancanti, avvisi, confidenza, motivazione LLM, errori e conferma che nessuna azione è stata eseguita.
 
-Limiti predefiniti: 3 annunci per fonte e 3 candidati Discovery. I massimi accettati sono rispettivamente 20 e 10.
+Limiti predefiniti: 3 annunci per fonte e per query, 3 candidati Discovery. I massimi accettati sono rispettivamente 20 e 10.

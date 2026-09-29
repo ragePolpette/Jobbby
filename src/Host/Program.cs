@@ -22,7 +22,8 @@ var dryRunOptions = DryRunOptions.FromConfiguration(configuration, baseDirectory
 var dryRunLog = dryRunOptions.Enabled ? new DryRunLog() : null;
 var sourcesPath = Path.Combine(baseDirectory, "sources.json");
 var applicationsPath = Path.Combine(baseDirectory, "applications.json");
-var cvPath = Path.Combine(baseDirectory, "cv.json");
+var cvPath = configuration["Jobbby:CvPath"] ?? Path.Combine(baseDirectory, "cv.json");
+var searchesPath = configuration["Jobbby:SearchesConfig"] ?? Path.Combine(baseDirectory, "searches.json");
 var runReportsPath = Path.Combine(baseDirectory, "run-reports.json");
 var cursorsPath = Path.Combine(baseDirectory, "cursors.json");
 
@@ -41,6 +42,11 @@ Console.WriteLine($"LLM provider: {llmSelection.Provider}");
 var candidateCv = await CvLoader.LoadAsync(cvPath, llmClient);
 Console.WriteLine($"Loaded candidate CV for {candidateCv.Name} ({candidateCv.YearsExperience}y, {candidateCv.Seniority})");
 
+var searchPlan = await SearchQueryPlanner.PlanAsync(ConfigLoader.Load<SearchSettings>(searchesPath), candidateCv, llmClient);
+if (searchPlan.DerivationError is not null)
+    Console.Error.WriteLine($"Could not derive search queries from the CV, using configured ones only: {searchPlan.DerivationError}");
+Console.WriteLine($"Search queries: {string.Join(", ", searchPlan.Queries)}");
+
 ITelegramGateway? gateway = dryRunOptions.Enabled ? null : TelegramGateway.FromEnvironment(httpClient);
 var registry = new PendingApprovalRegistry();
 if (gateway is not null)
@@ -56,10 +62,11 @@ if (dryRunOptions.Enabled)
         dryRunOptions.MaxPostingsPerSource,
         dryRunOptions.MaxDiscoveryCandidates,
         Sources = sources.Select(source => new { source.Name, source.BaseUrl }).ToList(),
-        Candidate = new { candidateCv.Name, candidateCv.YearsExperience, candidateCv.Seniority },
+        Searches = new { searchPlan.ConfiguredQueries, searchPlan.DerivedQueries, searchPlan.DerivationError },
+        Candidate = new { candidateCv.Name, candidateCv.YearsExperience, candidateCv.Seniority, candidateCv.Skills },
         Llm = new { llmSelection.Provider, llmSelection.Endpoint, llmSelection.Model },
     });
-    Console.WriteLine($"DRY RUN enabled: max {dryRunOptions.MaxPostingsPerSource} posting(s) per source, no Telegram or persistent state writes.");
+    Console.WriteLine($"DRY RUN enabled: max {dryRunOptions.MaxPostingsPerSource} posting(s) per source and query, no Telegram or persistent state writes.");
 }
 
 var discoveryPath = configuration["Jobbby:DiscoveryConfig"] ?? Environment.GetEnvironmentVariable("JOBBBY_DISCOVERY_CONFIG");
@@ -117,19 +124,18 @@ var updatedCursors = await Task.WhenAll(
         definition,
         jobSource,
         source,
+        searchPlan.Queries,
         cursorsBySource,
         statsCollector,
         dryRunOptions.Enabled ? dryRunOptions.MaxPostingsPerSource : null,
+        runAt,
         dryRunLog)));
 
 gateway?.Stop();
 
 var mergedCursors = new Dictionary<string, SourceCursor>(cursorsBySource);
-foreach (var cursor in updatedCursors)
-{
-    if (cursor is not null)
-        mergedCursors[cursor.SourceName] = cursor;
-}
+foreach (var cursor in updatedCursors.SelectMany(cursors => cursors))
+    mergedCursors[cursor.SourceName] = cursor;
 
 var report = statsCollector.BuildReport(runAt);
 var summary = BuildSummaryMessage(report);
@@ -152,44 +158,43 @@ else
 
 Console.WriteLine("All source runs completed.");
 
-static async Task<SourceCursor?> RunForSourceAsync(
+static async Task<IReadOnlyList<SourceCursor>> RunForSourceAsync(
     GraphDefinition definition,
     IJobSource jobSource,
     SourceDefinition source,
+    IReadOnlyList<string> queries,
     IReadOnlyDictionary<string, SourceCursor> cursorsBySource,
     RunStatsCollector statsCollector,
-    int? postingLimit,
+    int? postingLimitPerQuery,
+    DateTimeOffset runAt,
     DryRunLog? dryRunLog)
 {
-    cursorsBySource.TryGetValue(source.Name, out var cursor);
+    var fetch = await MultiQueryFetcher.FetchAsync(jobSource, source, queries, cursorsBySource, postingLimitPerQuery, runAt);
 
-    IReadOnlyList<RawPosting> fetchedPostings;
-    try
+    foreach (var query in fetch.Queries)
     {
-        fetchedPostings = await jobSource.FetchAsync(source, cursor);
-    }
-    catch (Exception ex)
-    {
-        statsCollector.IncrementError(source.Name);
-        dryRunLog?.Add("source_fetch_failed", new { Source = source.Name, Error = ex.Message });
-        Console.Error.WriteLine($"[{source.Name}] fetch failed: {ex.Message}");
-        return cursor;
+        if (query.Error is not null)
+        {
+            statsCollector.IncrementError(source.Name);
+            dryRunLog?.Add("source_fetch_failed", new { Source = source.Name, query.Query, query.Error });
+            Console.Error.WriteLine($"[{source.Name}] fetch failed for '{query.Query}': {query.Error}");
+        }
+        else
+        {
+            dryRunLog?.Add("source_fetched", new { Source = source.Name, query.Query, query.Returned });
+            Console.WriteLine($"[{source.Name}] '{query.Query}': {query.Returned} posting(s)");
+        }
     }
 
-    var rawPostings = postingLimit is null
-        ? fetchedPostings
-        : fetchedPostings.Take(postingLimit.Value).ToList();
+    var rawPostings = fetch.Postings;
     statsCollector.IncrementTotalFetched(rawPostings.Count);
-    dryRunLog?.Add("source_fetched", new { Source = source.Name, Returned = fetchedPostings.Count, Processed = rawPostings.Count });
-    Console.WriteLine($"[{source.Name}] fetched {fetchedPostings.Count} posting(s), processing {rawPostings.Count}");
-
-    if (rawPostings.Count == 0)
-        return cursor;
+    dryRunLog?.Add("source_postings_merged", new { Source = source.Name, Processed = rawPostings.Count });
+    Console.WriteLine($"[{source.Name}] processing {rawPostings.Count} distinct posting(s)");
 
     var postingRuns = rawPostings.Select(rawPosting => RunForPostingAsync(definition, source, rawPosting, statsCollector, dryRunLog));
     await Task.WhenAll(postingRuns);
 
-    return CursorSelection.SelectMostRecent(source.Name, rawPostings, DateTimeOffset.UtcNow);
+    return fetch.Queries.Where(query => query.Cursor is not null).Select(query => query.Cursor!).ToList();
 }
 
 static async Task RunForPostingAsync(

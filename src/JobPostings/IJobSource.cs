@@ -4,7 +4,7 @@ using Reporting;
 namespace JobPostings;
 
 /// <summary>
-/// Fetches raw postings from one whitelisted source. Mirrors how <c>ILlmClient</c> and
+/// Fetches raw postings matching <paramref name="query"/> (see <c>SearchSettings</c>) from one whitelisted source. Mirrors how <c>ILlmClient</c> and
 /// <c>IWebSearchClient</c> decouple callers from a specific provider - see
 /// <see cref="AdzunaJobSource"/> for the real implementation and
 /// <see cref="MockJobSource"/> for tests. <paramref name="cursor"/> is that source's
@@ -13,5 +13,5 @@ namespace JobPostings;
 /// </summary>
 public interface IJobSource
 {
-    Task<IReadOnlyList<RawPosting>> FetchAsync(SourceDefinition source, SourceCursor? cursor = null, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RawPosting>> FetchAsync(SourceDefinition source, string query, SourceCursor? cursor = null, CancellationToken cancellationToken = default);
 }
