@@ -34,10 +34,9 @@ var cursorsBySource = dryRunOptions.Enabled
     : RunReportStore.LoadCursors(cursorsPath);
 Console.WriteLine($"Loaded {cursorsBySource.Count} source cursor(s) from {cursorsPath}");
 
-var llmEndpoint = configuration["Llm:Endpoint"] ?? throw new InvalidOperationException("Missing Llm:Endpoint configuration.");
-var llmApiKey = configuration["Llm:ApiKey"] ?? throw new InvalidOperationException("Missing Llm:ApiKey secret.");
-var llmModel = configuration["Llm:Model"] ?? throw new InvalidOperationException("Missing Llm:Model configuration.");
-ILlmClient llmClient = new OpenAiCompatibleLlmClient(httpClient, llmEndpoint, llmApiKey, llmModel);
+var llmSelection = LlmClientFactory.Create(configuration, httpClient);
+var llmClient = llmSelection.Client;
+Console.WriteLine($"LLM provider: {llmSelection.Provider}");
 
 var candidateCv = await CvLoader.LoadAsync(cvPath, llmClient);
 Console.WriteLine($"Loaded candidate CV for {candidateCv.Name} ({candidateCv.YearsExperience}y, {candidateCv.Seniority})");
@@ -58,7 +57,7 @@ if (dryRunOptions.Enabled)
         dryRunOptions.MaxDiscoveryCandidates,
         Sources = sources.Select(source => new { source.Name, source.BaseUrl }).ToList(),
         Candidate = new { candidateCv.Name, candidateCv.YearsExperience, candidateCv.Seniority },
-        Llm = new { Endpoint = llmEndpoint, Model = llmModel },
+        Llm = new { llmSelection.Provider, llmSelection.Endpoint, llmSelection.Model },
     });
     Console.WriteLine($"DRY RUN enabled: max {dryRunOptions.MaxPostingsPerSource} posting(s) per source, no Telegram or persistent state writes.");
 }
