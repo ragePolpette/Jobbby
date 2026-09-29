@@ -46,6 +46,21 @@ public class LlmClientFactoryTests
         Assert.IsType<ClaudeCliLlmClient>(selection.Client);
         Assert.Equal("claude-cli", selection.Provider);
         Assert.Null(selection.Endpoint);
+        Assert.Equal("sonnet", selection.Model);
+    }
+
+    [Fact]
+    public void Create_ClaudeCliWithModel_UsesConfiguredModel()
+    {
+        using var httpClient = new HttpClient();
+
+        var selection = LlmClientFactory.Create(Configuration(new()
+        {
+            ["Llm:Provider"] = "claude-cli",
+            ["Llm:Model"] = "haiku",
+        }), httpClient);
+
+        Assert.Equal("haiku", selection.Model);
     }
 
     [Fact]

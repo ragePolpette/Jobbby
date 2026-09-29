@@ -14,6 +14,7 @@ public static class LlmClientFactory
 {
     public const string OpenAiProvider = "openai";
     public const string ClaudeCliProvider = "claude-cli";
+    public const string DefaultClaudeModel = "sonnet";
 
     public static LlmSelection Create(IConfiguration configuration, HttpClient httpClient, ICliProcessRunner? runner = null)
     {
@@ -38,7 +39,7 @@ public static class LlmClientFactory
     private static LlmSelection CreateClaudeCli(IConfiguration configuration, ICliProcessRunner? runner)
     {
         var executable = configuration["Llm:ClaudePath"] ?? "claude";
-        var model = configuration["Llm:Model"];
+        var model = string.IsNullOrWhiteSpace(configuration["Llm:Model"]) ? DefaultClaudeModel : configuration["Llm:Model"]!;
         var timeout = int.TryParse(configuration["Llm:TimeoutSeconds"], out var seconds) && seconds > 0
             ? TimeSpan.FromSeconds(seconds)
             : (TimeSpan?)null;
