@@ -72,6 +72,8 @@ public static class SearchQueryPlanner
             Sei un recruiter. Dal profilo del candidato ricava fino a {{maxDerived}} query di ricerca per un motore di annunci di lavoro.
             Ogni query è un titolo di ruolo breve (2-4 parole), come lo scriverebbe un'azienda in un annuncio, ad esempio "Backend Developer C#".
             Non ripetere query equivalenti a quelle già configurate: {{alreadyConfigured}}.
+            Non usare sigle di due lettere come "AI" o "ML": i motori di ricerca le ignorano. Scrivi la forma estesa ("Artificial Intelligence", "Machine Learning") o una sigla più lunga ("LLM").
+            Usa una sola tecnologia per query: combinazioni come "Vue.js .NET" non trovano risultati.
 
             Seniority: {{cv.Seniority}} ({{cv.YearsExperience}} anni di esperienza)
             Ruoli:

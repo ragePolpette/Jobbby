@@ -51,7 +51,10 @@ public sealed class NormalizeJobPostingNode : INode
             Description: rawPosting.RawDescription,
             SourceUrl: sourceUrl,
             ApplyUrl: rawPosting.ApplyUrl,
-            ApplyChannel: applyChannel);
+            ApplyChannel: applyChannel,
+            Location: rawPosting.Location,
+            RemoteAvailable: extraction.RemoteAvailable,
+            SalaryMaximum: rawPosting.SalaryMaximum);
 
         return NodeResult.From(new Dictionary<string, object>
         {
@@ -93,13 +96,15 @@ public sealed class NormalizeJobPostingNode : INode
               {
                 "company": string,
                 "seniorityLevel": string,
-                "requiredStack": [string]
+                "requiredStack": [string],
+                "remoteAvailable": boolean | null
               }
               """
             : """
               {
                 "seniorityLevel": string,
-                "requiredStack": [string]
+                "requiredStack": [string],
+                "remoteAvailable": boolean | null
               }
               """;
 
@@ -108,6 +113,8 @@ public sealed class NormalizeJobPostingNode : INode
 
             Titolo: {{rawPosting.RawTitle}}
             Descrizione: {{rawPosting.RawDescription}}
+
+            remoteAvailable: true se il lavoro è da remoto o ibrido, false se è esplicitamente solo in sede, null se l'annuncio non lo dice.
 
             Restituisci SOLO JSON valido con questo schema, nessun markdown, nessun commento:
             {{schema}}
@@ -124,5 +131,8 @@ public sealed class NormalizeJobPostingNode : INode
 
         [JsonPropertyName("requiredStack")]
         public List<string> RequiredStack { get; init; } = new();
+
+        [JsonPropertyName("remoteAvailable")]
+        public bool? RemoteAvailable { get; init; }
     }
 }

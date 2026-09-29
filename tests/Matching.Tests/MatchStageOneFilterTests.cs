@@ -58,6 +58,30 @@ public class MatchStageOneFilterTests
     }
 
     [Fact]
+    public void Evaluate_GenericSkillCoveredBySpecificVariant_Passes()
+    {
+        // Regression: a ".NET" posting was rejected because the CV listed ".NET Core"/".NET Framework".
+        var posting = NewPosting(new[] { ".NET" }, "Senior");
+        var cv = NewCv(7, skills: new[] { ".NET Core", ".NET Framework" });
+
+        var (passes, reason) = MatchStageOneFilter.Evaluate(posting, cv);
+
+        Assert.True(passes);
+        Assert.Contains(".NET", reason);
+    }
+
+    [Fact]
+    public void Evaluate_OnSiteLocationContainingDesiredCity_Passes()
+    {
+        var posting = NewPosting(new[] { "C#" }, "Mid") with { Location = "Milano, Lombardia", RemoteAvailable = false };
+        var cv = NewCv(4, skills: new[] { "C#" }) with { DesiredLocations = new List<string> { "Milano" } };
+
+        var (passes, _) = MatchStageOneFilter.Evaluate(posting, cv);
+
+        Assert.True(passes);
+    }
+
+    [Fact]
     public void Evaluate_NoStackOverlap_Fails()
     {
         var posting = NewPosting(new[] { "Rust" }, "Mid");

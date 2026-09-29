@@ -96,8 +96,11 @@ public sealed class AdzunaJobSource : IJobSource
                 var applyUrl = GetStringOrEmpty(result, "redirect_url");
                 var company = GetCompanyDisplayName(result);
                 var postedAt = GetCreatedAt(result);
+                var location = result.TryGetProperty("location", out var locationElement)
+                    ? NullIfEmpty(GetStringOrEmpty(locationElement, "display_name"))
+                    : null;
 
-                postings.Add(new RawPosting(title, description, applyUrl, sourceDomain, company, postedAt));
+                postings.Add(new RawPosting(title, description, applyUrl, sourceDomain, company, postedAt, location, GetAdvertisedSalaryMaximum(result)));
             }
 
             // Best-effort dedup aid alongside max_days_old: drop the one posting we know
@@ -111,6 +114,26 @@ public sealed class AdzunaJobSource : IJobSource
 
     private static string GetStringOrEmpty(JsonElement element, string propertyName) =>
         element.TryGetProperty(propertyName, out var value) ? value.GetString() ?? string.Empty : string.Empty;
+
+    private static string? NullIfEmpty(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    // Below this, salary_max is not a yearly gross figure: real responses carry values such
+    // as 38 or 70 (thousands, or hourly/daily rates), which would fail every salary check.
+    private const decimal MinimumPlausibleYearlySalary = 5000m;
+
+    // salary_is_predicted = "1" marks Adzuna's own estimate rather than the advertiser's figure;
+    // filtering candidates on a guess would reject postings for the wrong reason.
+    private static decimal? GetAdvertisedSalaryMaximum(JsonElement result)
+    {
+        if (result.TryGetProperty("salary_is_predicted", out var predicted) && predicted.ToString() == "1")
+            return null;
+
+        if (!result.TryGetProperty("salary_max", out var salary) || salary.ValueKind != JsonValueKind.Number)
+            return null;
+
+        var value = salary.GetDecimal();
+        return value >= MinimumPlausibleYearlySalary ? value : null;
+    }
 
     // Adzuna nests the employer name as company.display_name (see
     // https://developer.adzuna.com/docs/search - the "company" object on each result).

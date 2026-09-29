@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Config;
 using JobPostings;
 using Reporting;
@@ -50,7 +51,11 @@ public static class MultiQueryFetcher
             var limited = postingLimitPerQuery is null ? fetched : fetched.Take(postingLimitPerQuery.Value).ToList();
             foreach (var posting in limited)
             {
-                if (seen.Add(IdentityOf(posting)))
+                // Both keys are always recorded: the same ad under another URL, or a reposted
+                // ad (new id, "Acme S.r.l" vs "ACME SRL") under the same URL, is still one posting.
+                var urlSeen = !string.IsNullOrWhiteSpace(posting.ApplyUrl) && !seen.Add("url:" + posting.ApplyUrl);
+                var titleSeen = !seen.Add("job:" + TitleCompanyKey(posting));
+                if (!urlSeen && !titleSeen)
                     merged.Add(posting);
             }
 
@@ -61,8 +66,18 @@ public static class MultiQueryFetcher
         return new SourceFetchResult(merged, outcomes);
     }
 
-    private static string IdentityOf(RawPosting posting) =>
-        string.IsNullOrWhiteSpace(posting.ApplyUrl)
-            ? $"{posting.RawTitle}|{posting.Company}"
-            : posting.ApplyUrl;
+    private static readonly Regex NonAlphanumeric = new(@"[^\p{L}\p{N}#+]+", RegexOptions.Compiled);
+
+    private static readonly Regex LegalSuffix = new(
+        @"\b(s ?r ?l ?s?|s ?p ?a|s ?a ?s|s ?n ?c|inc|ltd|llc|gmbh|ag|bv|plc|corp|co|company|group|italia)\b",
+        RegexOptions.Compiled);
+
+    internal static string TitleCompanyKey(RawPosting posting) =>
+        $"{NormalizeText(posting.RawTitle)}|{NormalizeCompany(posting.Company)}";
+
+    private static string NormalizeText(string value) =>
+        NonAlphanumeric.Replace(value.ToLowerInvariant(), " ").Trim();
+
+    private static string NormalizeCompany(string value) =>
+        Regex.Replace(LegalSuffix.Replace(NormalizeText(value), " "), @"\s+", " ").Trim();
 }

@@ -27,6 +27,50 @@ public class AdzunaJobSourceTests
         """;
 
     [Fact]
+    public async Task FetchAsync_MapsLocationAndOnlyAdvertisedSalary()
+    {
+        const string response = """
+            {
+              "results": [
+                {
+                  "title": "Backend Engineer",
+                  "redirect_url": "https://www.adzuna.it/land/ad/1",
+                  "location": { "display_name": "Milano, Lombardia" },
+                  "salary_max": 55000,
+                  "salary_is_predicted": "0"
+                },
+                {
+                  "title": "Frontend Developer",
+                  "redirect_url": "https://www.adzuna.it/land/ad/2",
+                  "salary_max": 38000.5,
+                  "salary_is_predicted": "1"
+                },
+                {
+                  "title": "ML Engineer",
+                  "redirect_url": "https://www.adzuna.it/land/ad/3",
+                  "salary_max": 70,
+                  "salary_is_predicted": "0"
+                }
+              ]
+            }
+            """;
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(response, Encoding.UTF8, "application/json"),
+        });
+        using var httpClient = new HttpClient(handler);
+        var jobSource = new AdzunaJobSource(httpClient, "id", "key");
+
+        var postings = await jobSource.FetchAsync(new SourceDefinition { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" }, "backend");
+
+        Assert.Equal("Milano, Lombardia", postings[0].Location);
+        Assert.Equal(55000m, postings[0].SalaryMaximum);
+        Assert.Null(postings[1].Location);
+        Assert.Null(postings[1].SalaryMaximum); // Adzuna's own estimate, not the advertiser's
+        Assert.Null(postings[2].SalaryMaximum); // not a plausible yearly salary
+    }
+
+    [Fact]
     public async Task FetchAsync_MapsAdzunaResultsIntoRawPostings()
     {
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
