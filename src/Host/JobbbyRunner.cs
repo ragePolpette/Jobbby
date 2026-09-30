@@ -23,7 +23,12 @@ public enum RunMode
 /// <param name="Kind">started, area, queries, fetched, fetch_failed, evaluated, posting_failed, warning, completed, cancelled.</param>
 public sealed record RunEvent(string Kind, string Message, DateTimeOffset At);
 
-public sealed record RunDependencies(IJobSource JobSource, ILlmClient Llm, IReadOnlyList<SourceDefinition> Sources);
+/// <param name="Ledger">
+/// The process's single ledger for the given company suffixes (the web host shares one with its
+/// decision APIs); null = open the DataDir's ledger for this run.
+/// </param>
+public sealed record RunDependencies(IJobSource JobSource, ILlmClient Llm, IReadOnlyList<SourceDefinition> Sources,
+    Func<IReadOnlyList<string>, ApplicationLedger.ApplicationLedger>? Ledger = null);
 
 /// <param name="Area">The area actually searched (settings plus the CV location when enabled).</param>
 /// <param name="RunPath">The run's file in <c>DataDir/runs/</c>.</param>
@@ -54,14 +59,18 @@ public sealed class JobbbyRunner
         _runs = new RunStore(dataDir);
     }
 
-    public async Task<RunSummary> RunAsync(JobbbySettings settings, CvData cv, RunMode mode, IProgress<RunEvent> progress, CancellationToken cancellationToken)
+    public static string NewRunId(RunMode mode) =>
+        $"{DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture)}-{(mode == RunMode.Dry ? "dry" : "run")}-{Guid.NewGuid():N}"[..28];
+
+    /// <param name="runId">Chosen by the caller when it must be known before the run starts (the web UI); otherwise generated.</param>
+    public async Task<RunSummary> RunAsync(JobbbySettings settings, CvData cv, RunMode mode, IProgress<RunEvent> progress, CancellationToken cancellationToken, string? runId = null)
     {
         var errors = SettingsValidator.Validate(settings, forRun: true);
         if (errors.Count > 0)
             throw new SettingsValidationException(errors);
 
         var runAt = DateTimeOffset.UtcNow;
-        var runId = $"{runAt:yyyyMMdd-HHmmss}-{(mode == RunMode.Dry ? "dry" : "run")}-{Guid.NewGuid():N}"[..28];
+        runId ??= NewRunId(mode);
         var run = new RunRecord
         {
             RunId = runId,
@@ -156,7 +165,7 @@ public sealed class JobbbyRunner
             : RunReportStore.LoadCursors(_dataDir.CursorsPath);
         var suffixes = settings.Dedupe.ExtraCompanySuffixes;
         // Dry runs read the real history (dedupe) but never write it: RecordOutcomeNode skips the write.
-        var ledger = new ApplicationLedger.ApplicationLedger(_dataDir.ApplicationsPath, suffixes);
+        var ledger = _deps.Ledger?.Invoke(suffixes) ?? new ApplicationLedger.ApplicationLedger(_dataDir.ApplicationsPath, suffixes);
         var history = ledger;
         // No approval channel: postings below the threshold are recorded as Pending and wait for the user.
         var definition = HostGraph.Build(
