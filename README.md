@@ -10,11 +10,11 @@ Tutto lo stato di un'installazione sta in una cartella, indicata con `Jobbby__Da
 |---|---|
 | `settings.json` | impostazioni (creato con valori neutri al primo avvio) |
 | `cv.pdf`, `cv.json` o `cv.extracted.json` | il CV; in alternativa `Jobbby__CvPath` |
-| `applications.json`, `cursors.json`, `run-reports.json` | registro degli esiti, cursori delle ricerche, riepiloghi |
+| `applications.json`, `cursors.json` | registro degli esiti (con lo storico delle decisioni), cursori delle ricerche |
 | `skill-aliases.json` | facoltativo: equivalenze tra competenze della propria professione |
-| `runs/` | log delle dry run |
+| `runs/` | una file per run, dry o normale: impostazioni usate, zona, ricerche, chiamate, esito di ogni annuncio |
 
-CLI e (in seguito) UI web girano solo nel container, un processo alla volta per `DataDir`: un secondo processo esce subito con un messaggio chiaro. Al primo avvio `applications.json` e `run-reports.json` vengono copiati dalla directory dell'eseguibile, se presenti; `cursors.json` no, perché le chiavi ora includono paese e zona.
+CLI e (in seguito) UI web girano solo nel container, un processo alla volta per `DataDir`: un secondo processo esce subito con un messaggio chiaro. Al primo avvio `applications.json` e `run-reports.json` vengono copiati dalla directory dell'eseguibile, se presenti; `cursors.json` no, perché le chiavi ora includono paese e zona. `run-reports.json` viene poi importato una volta in `runs/` come run di sola sintesi (`legacy`) e rinominato `.imported`.
 
 ## Impostazioni (`settings.json`)
 
@@ -60,6 +60,22 @@ Con `llm.provider` = `claude-cli` si usa il CLI di Claude Code già autenticato,
 Jobbby__DataDir=/percorso/dati Jobbby__DryRun=true dotnet run --project src/Host/Host.csproj
 ```
 
-La dry run usa Adzuna e l'LLM reali ma non scrive registro, cursori né riepiloghi e non invia messaggi; valuta al massimo `dryRun.maxPostingsPerQuery` annunci per query. Il log dettagliato va in `runs/dry-run-YYYYMMDD-HHMMSS.json` (oppure `Jobbby__DryRunLogPath`). `Ctrl+C` interrompe la run fermando anche le chiamate LLM in corso; cursori e riepilogo non vengono salvati.
+La dry run usa Adzuna e l'LLM reali ma non scrive registro né cursori; valuta al massimo `dryRun.maxPostingsPerQuery` annunci per query. Senza `Jobbby__DryRun` la run è normale e registra esiti e cursori. Ogni run finisce in `runs/<runId>.json`. `Ctrl+C` interrompe la run fermando anche le chiamate LLM in corso: la run risulta `Interrupted` e i cursori non vengono salvati.
 
-Senza `Jobbby__DryRun` la run è normale: registra esiti e cursori e, finché le approvazioni non passano alla UI, chiede su Telegram gli annunci sotto la soglia (`Telegram:BotToken`, `Telegram:ChatId`). Discovery non fa parte delle run: se `Jobbby__DiscoveryConfig` è impostato viene ignorato con un avviso.
+### Esiti
+
+| Esito | Quando |
+|---|---|
+| `AutoRejected` | filtro stage 1 non superato, oppure giudizio `Weak` |
+| `Pending` | `Strong`/`Borderline` sotto `evaluation.autoApproveThreshold`, oppure nessun requisito estraibile dall'estratto |
+| `Shortlisted` | `Strong`/`Borderline` dalla soglia in su |
+| `Approved` / `Rejected` / `Applied` | decisione dell'utente |
+
+Un annuncio già presente nel registro non viene rivalutato (nemmeno in dry run) e non costa chiamate LLM. Le decisioni si prendono, finché non c'è la UI, dalla riga di comando:
+
+```bash
+dotnet run --project src/Host/Host.csproj -- pending
+dotnet run --project src/Host/Host.csproj -- decide <postingId> approve|reject|applied
+```
+
+Discovery non fa parte delle run: se `Jobbby__DiscoveryConfig` è impostato viene ignorato con un avviso. L'integrazione Telegram resta nel codice ma le run non la usano.

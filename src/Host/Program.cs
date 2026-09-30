@@ -39,7 +39,7 @@ using (dataDirLock)
 {
     try
     {
-        return await RunCliAsync(configuration, dataDir);
+        return await RunCliAsync(configuration, dataDir, args);
     }
     catch (Exception ex) when (ex is SettingsFileException or SettingsValidationException or InvalidOperationException
                                    or NotSupportedException or FileNotFoundException or System.Text.Json.JsonException)
@@ -50,7 +50,7 @@ using (dataDirLock)
     }
 }
 
-static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir)
+static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir, string[] args)
 {
     var baseDirectory = AppContext.BaseDirectory;
     var legacyDirectories = new[] { configuration["Jobbby:LegacyDir"], baseDirectory }.OfType<string>();
@@ -71,6 +71,21 @@ static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir
     foreach (var note in settingsResult.Notes)
         Console.WriteLine(note);
     var settings = settingsResult.Settings;
+
+    // Decision commands: no run, no LLM, no Adzuna.
+    switch (args.FirstOrDefault()?.ToLowerInvariant())
+    {
+        case "pending":
+            return CliCommands.Pending(dataDir, Console.Out, settings.Dedupe.ExtraCompanySuffixes);
+        case "decide" when args.Length == 3:
+            return CliCommands.Decide(dataDir, args[1], args[2], Console.Out, Console.Error, settings.Dedupe.ExtraCompanySuffixes);
+        case "decide":
+            Console.Error.WriteLine("Uso: decide <postingId> approve|reject|applied");
+            return 2;
+        case { } unknown:
+            Console.Error.WriteLine($"Comando sconosciuto: '{unknown}'. Comandi: pending, decide <postingId> approve|reject|applied (senza argomenti: una run).");
+            return 2;
+    }
 
     var errors = SettingsValidator.Validate(settings, forRun: true);
     if (errors.Count > 0)

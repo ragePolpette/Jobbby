@@ -86,6 +86,24 @@ public sealed class ApplicationLedger
         }
     }
 
+    /// <summary>
+    /// A user's decision on a posting: appends a copy of its current record with the new
+    /// outcome, so the posting keeps all its data and its history. Null if the id is unknown.
+    /// </summary>
+    public ApplicationRecord? Decide(string postingId, string outcome, string reason)
+    {
+        lock (_lock)
+        {
+            var current = Current(postingId);
+            if (current is null)
+                return null;
+
+            var decided = current with { Outcome = outcome, Reason = reason, RecordedAt = DateTimeOffset.UtcNow };
+            RecordOutcome(decided);
+            return decided;
+        }
+    }
+
     private static ApplicationRecord Rekey(ApplicationRecord record, IReadOnlyList<string>? suffixes)
     {
         var key = PostingIdentity.Key(record.Company, record.Title, suffixes);
