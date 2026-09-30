@@ -38,6 +38,7 @@ public static class JobbbyWeb
         builder.Services.AddSingleton<RunManager>();
         builder.Services.AddSingleton(new CvStore(dataDir));
         builder.Services.AddSingleton<Web.Api.CvGate>();
+        builder.Services.AddSingleton<PostingService>();
         builder.Services.AddSingleton<IRunDependenciesFactory, DefaultRunDependenciesFactory>();
         builder.Services.AddHttpClient("jobbby");
         builder.Services.ConfigureHttpJsonOptions(options =>
@@ -74,6 +75,7 @@ public static class JobbbyWeb
         app.MapRunsApi();
         app.MapPostingsApi();
         app.MapCvApi();
+        app.MapPresentationApi();
         return app;
     }
 }
