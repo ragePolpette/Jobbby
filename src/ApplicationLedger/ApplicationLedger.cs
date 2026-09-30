@@ -106,7 +106,7 @@ public sealed class ApplicationLedger
 
     private static ApplicationRecord Rekey(ApplicationRecord record, IReadOnlyList<string>? suffixes)
     {
-        var key = PostingIdentity.Key(record.Company, record.Title, suffixes);
+        var key = PostingIdentity.Key(record.Company, record.Title, suffixes, record.ApplyUrl ?? record.SourceUrl);
         return record with { DedupeKey = key, PostingId = PostingIdentity.Id(key) };
     }
 }

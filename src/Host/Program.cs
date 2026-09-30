@@ -61,8 +61,10 @@ static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir
     foreach (var runId in runs.RecoverInterrupted())
         Console.WriteLine($"Run {runId} era rimasta in corso: segnata come interrotta.");
     var imported = runs.ImportLegacyReports();
-    if (imported > 0)
-        Console.WriteLine($"Importati {imported} riepiloghi da run-reports.json in {dataDir.RunsDirectory}.");
+    if (imported.Imported > 0)
+        Console.WriteLine($"Importati {imported.Imported} riepiloghi da run-reports.json in {dataDir.RunsDirectory}.");
+    if (imported.Warning is not null)
+        Console.Error.WriteLine(imported.Warning);
 
     // Only an explicitly configured searches.json seeds a new settings.json: the repository ships none.
     var settingsResult = SettingsStore.LoadOrCreate(dataDir.SettingsPath, configuration["Jobbby:SearchesConfig"]);

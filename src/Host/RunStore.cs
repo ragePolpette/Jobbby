@@ -7,6 +7,8 @@ using Reporting;
 
 namespace Host;
 
+public sealed record LegacyImportResult(int Imported, string? Warning);
+
 /// <summary>Reads and writes <c>DataDir/runs/*.json</c> (atomically), and recovers or imports old runs.</summary>
 public sealed class RunStore
 {
@@ -78,16 +80,30 @@ public sealed class RunStore
         return recovered;
     }
 
+    /// <summary>True once the old run-reports.json was imported or set aside, so migration must not bring it back.</summary>
+    public static bool LegacyReportsHandled(DataDir dataDir) =>
+        File.Exists(dataDir.RunReportsPath + ".imported") || File.Exists(dataDir.RunReportsPath + ".corrupt");
+
     /// <summary>
     /// Turns the old <c>run-reports.json</c> into summary-only runs (mode "legacy"), once: the
-    /// file is then renamed to <c>run-reports.json.imported</c>. Returns how many were imported.
+    /// file is then renamed to <c>run-reports.json.imported</c>. An unreadable file is renamed
+    /// to <c>.corrupt</c> with a warning instead of blocking every command.
     /// </summary>
-    public int ImportLegacyReports()
+    public LegacyImportResult ImportLegacyReports()
     {
         if (!File.Exists(_dataDir.RunReportsPath))
-            return 0;
+            return new LegacyImportResult(0, null);
 
-        var reports = RunReportStore.LoadRunReports(_dataDir.RunReportsPath);
+        IReadOnlyList<RunReport> reports;
+        try
+        {
+            reports = RunReportStore.LoadRunReports(_dataDir.RunReportsPath);
+        }
+        catch (JsonException ex)
+        {
+            File.Move(_dataDir.RunReportsPath, _dataDir.RunReportsPath + ".corrupt", overwrite: true);
+            return new LegacyImportResult(0, $"run-reports.json illeggibile, messo da parte come run-reports.json.corrupt: {ex.Message}");
+        }
         var index = 0;
         foreach (var report in reports)
         {
@@ -103,6 +119,6 @@ public sealed class RunStore
         }
 
         File.Move(_dataDir.RunReportsPath, _dataDir.RunReportsPath + ".imported", overwrite: true);
-        return reports.Count;
+        return new LegacyImportResult(reports.Count, null);
     }
 }

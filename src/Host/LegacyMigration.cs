@@ -21,6 +21,8 @@ public static class LegacyMigration
         {
             if (File.Exists(target))
                 continue;
+            if (target == dataDir.RunReportsPath && RunStore.LegacyReportsHandled(dataDir))
+                continue;
 
             var source = directories.Select(directory => Path.Combine(directory, fileName)).FirstOrDefault(File.Exists);
             if (source is null)

@@ -12,8 +12,8 @@ public static class PostingRecordFactory
         var posting = state.Get<JobPosting>(NormalizeJobPostingNode.JobPostingStateKey);
         var company = posting?.Company ?? state.Get<string>(JobApplicationStateKeys.Company) ?? string.Empty;
         var title = posting?.Title ?? state.Get<string>(JobApplicationStateKeys.Title) ?? string.Empty;
-        var dedupeKey = state.Get<string>(DedupeCheckNode.DedupeKeyStateKey) ?? PostingIdentity.Key(company, title);
         var applyUrl = posting?.ApplyUrl ?? state.Get<string>(JobApplicationStateKeys.SourceUrl);
+        var dedupeKey = state.Get<string>(DedupeCheckNode.DedupeKeyStateKey) ?? PostingIdentity.Key(company, title, applyUrl: applyUrl);
         var judged = state.TryGet<string>(ScoreMatchNode.MatchCategoryStateKey, out var category);
 
         return new ApplicationRecord(

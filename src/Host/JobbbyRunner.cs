@@ -154,13 +154,10 @@ public sealed class JobbbyRunner
         var cursors = mode == RunMode.Dry
             ? new Dictionary<string, SourceCursor>()
             : RunReportStore.LoadCursors(_dataDir.CursorsPath);
-        var ledgerPath = mode == RunMode.Dry
-            ? Path.Combine(Path.GetTempPath(), $"jobbby-dry-run-{Guid.NewGuid():N}.json")
-            : _dataDir.ApplicationsPath;
         var suffixes = settings.Dedupe.ExtraCompanySuffixes;
-        var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath, suffixes);
-        // Dry runs dedupe against the real history without ever writing it.
-        var history = mode == RunMode.Dry ? new ApplicationLedger.ApplicationLedger(_dataDir.ApplicationsPath, suffixes) : ledger;
+        // Dry runs read the real history (dedupe) but never write it: RecordOutcomeNode skips the write.
+        var ledger = new ApplicationLedger.ApplicationLedger(_dataDir.ApplicationsPath, suffixes);
+        var history = ledger;
         // No approval channel: postings below the threshold are recorded as Pending and wait for the user.
         var definition = HostGraph.Build(
             null,
@@ -210,7 +207,7 @@ public sealed class JobbbyRunner
                 var evaluations = new List<Task>();
                 foreach (var posting in fetch.Postings)
                 {
-                    var key = PostingIdentity.Key(posting.Company, posting.RawTitle, suffixes);
+                    var key = PostingIdentity.Key(posting.Company, posting.RawTitle, suffixes, posting.ApplyUrl);
                     var slot = new RunPosting(PostingIdentity.Id(key), posting.RawTitle, posting.Company, posting.ApplyUrl, source.Name,
                         posting.Sweep.ToString(), PostingStatus.Interrupted, null, null, null);
 
@@ -234,11 +231,6 @@ public sealed class JobbbyRunner
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             cancelled = true;
-        }
-        finally
-        {
-            if (mode == RunMode.Dry && File.Exists(ledgerPath))
-                File.Delete(ledgerPath);
         }
 
         if (cancelled)

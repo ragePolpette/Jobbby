@@ -104,8 +104,8 @@ public class RunStoreTests
             """);
         var store = new RunStore(dataDir);
 
-        Assert.Equal(2, store.ImportLegacyReports());
-        Assert.Equal(0, store.ImportLegacyReports());
+        Assert.Equal(2, store.ImportLegacyReports().Imported);
+        Assert.Equal(0, store.ImportLegacyReports().Imported);
 
         var runs = store.List();
         Assert.Equal(2, runs.Count);

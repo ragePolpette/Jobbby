@@ -33,7 +33,7 @@ public sealed class DedupeCheckNode : INode
         var jobPosting = state.Get<JobPosting>(NormalizeJobPostingNode.JobPostingStateKey);
         var company = jobPosting?.Company ?? string.Empty;
         var title = jobPosting?.Title ?? string.Empty;
-        var dedupeKey = PostingIdentity.Key(company, title, _extraCompanySuffixes);
+        var dedupeKey = PostingIdentity.Key(company, title, _extraCompanySuffixes, jobPosting?.ApplyUrl);
 
         var alreadyProcessed = _ledger.HasBeenProcessed(dedupeKey);
 

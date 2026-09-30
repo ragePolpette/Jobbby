@@ -26,8 +26,18 @@ public static class PostingIdentity
         "oy", "ab", "a s", "as", "s l", "sl", "sp z o o", "kft",
     };
 
-    public static string Key(string company, string title, IEnumerable<string>? extraCompanySuffixes = null) =>
-        $"{NormalizeCompany(company, extraCompanySuffixes)}{Separator}{NormalizeText(title)}";
+    /// <param name="applyUrl">
+    /// Used only when the company is unknown: the title alone would merge unrelated employers'
+    /// ads (and give them one PostingId), so such a posting is identified by its link as well.
+    /// </param>
+    public static string Key(string company, string title, IEnumerable<string>? extraCompanySuffixes = null, string? applyUrl = null)
+    {
+        var normalizedCompany = NormalizeCompany(company, extraCompanySuffixes);
+        var key = $"{normalizedCompany}{Separator}{NormalizeText(title)}";
+        return normalizedCompany.Length == 0 && !string.IsNullOrWhiteSpace(applyUrl)
+            ? $"{key}{Separator}url:{applyUrl.Trim()}"
+            : key;
+    }
 
     /// <summary>Opaque, URL-safe, stable id of a key: first 16 bytes of its SHA-256, in hex.</summary>
     public static string Id(string key) =>
