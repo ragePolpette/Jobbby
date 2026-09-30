@@ -170,7 +170,9 @@ static async Task<IReadOnlyList<SourceCursor>> RunForSourceAsync(
     DateTimeOffset runAt,
     DryRunLog? dryRunLog)
 {
-    var fetch = await MultiQueryFetcher.FetchAsync(jobSource, source, queries, cursorsBySource, postingLimitPerQuery, runAt);
+    var country = Environment.GetEnvironmentVariable("Jobbby__Country") ?? throw new InvalidOperationException("Missing Jobbby:Country (Adzuna country code).");
+    var fetch = await MultiQueryFetcher.FetchAsync(jobSource, source, queries, country, new AreaSettings { Country = country },
+        new RemoteKeywordFilter(Array.Empty<string>()), cursorsBySource, postingLimitPerQuery, runAt);
 
     foreach (var query in fetch.Queries)
     {
