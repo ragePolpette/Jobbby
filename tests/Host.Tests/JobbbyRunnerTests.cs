@@ -194,7 +194,8 @@ public class JobbbyRunnerTests
         public async Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref Calls);
-            if (prompt.Contains("<annuncio>", StringComparison.Ordinal))
+            // Normalization is the only prompt asking to extract fields; stage two also carries <annuncio>.
+            if (prompt.Contains("Estrai le seguenti informazioni", StringComparison.Ordinal))
             {
                 onExtraction?.Invoke();
                 if (blockAfterCallback)

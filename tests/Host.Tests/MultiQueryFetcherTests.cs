@@ -52,6 +52,24 @@ public class MultiQueryFetcherTests
     }
 
     [Fact]
+    public async Task FetchAsync_CompanySuffixesAreInternational_AndNotGeographic()
+    {
+        var jobSource = new MockJobSource(_ => new[]
+        {
+            Posting("Pflegefachkraft", "https://x/1", "Pflege Plus GmbH"),
+            Posting("Pflegefachkraft", "https://x/2", "Pflege Plus"),
+            Posting("Contabile", "https://x/3", "Acme Italia"),
+            Posting("Contabile", "https://x/4", "Acme"),
+            Posting("Accountant", "https://x/5", "Nordic Oy"),
+            Posting("Accountant", "https://x/6", "NORDIC"),
+        });
+
+        var result = await Fetch(jobSource, new[] { "q" });
+
+        Assert.Equal(new[] { "https://x/1", "https://x/3", "https://x/4", "https://x/5" }, result.Postings.Select(p => p.ApplyUrl));
+    }
+
+    [Fact]
     public async Task FetchAsync_UsesAndProducesOneCursorPerQuery()
     {
         var previousKey = MultiQueryFetcher.CursorKey(Adzuna, "it", NoArea, SearchSweep.Local, "AI engineer");

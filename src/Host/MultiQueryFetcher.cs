@@ -107,7 +107,7 @@ public static class MultiQueryFetcher
     private static readonly Regex NonAlphanumeric = new(@"[^\p{L}\p{N}#+]+", RegexOptions.Compiled);
 
     private static readonly Regex LegalSuffix = new(
-        @"\b(s ?r ?l ?s?|s ?p ?a|s ?a ?s|s ?n ?c|inc|ltd|llc|gmbh|ag|bv|plc|corp|co|company|group|italia)\b",
+        @"\b(s ?r ?l ?s?|s ?p ?a|s ?a ?s|s ?n ?c|s ?a|gmbh|ag|kg|b ?v|n ?v|ltd|plc|llc|inc|corp|oy|ab|a ?s|s ?l|sp z ?o ?o|kft)$",
         RegexOptions.Compiled);
 
     internal static string TitleCompanyKey(RawPosting posting) =>
