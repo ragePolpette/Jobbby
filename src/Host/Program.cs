@@ -108,6 +108,7 @@ var ledger = new ApplicationLedger.ApplicationLedger(temporaryLedgerPath);
 var statsCollector = new RunStatsCollector();
 IJobSource jobSource = AdzunaJobSource.FromEnvironment(
     httpClient,
+    configuration["Jobbby:Country"] ?? throw new InvalidOperationException("Missing Jobbby:Country (Adzuna country code)."),
     resultsPerPage: dryRunOptions.Enabled ? dryRunOptions.MaxPostingsPerSource : 10);
 var definition = HostGraph.Build(
     gateway ?? new MockTelegramGateway(),

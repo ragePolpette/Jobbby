@@ -40,7 +40,7 @@ public static class MultiQueryFetcher
             IReadOnlyList<RawPosting> fetched;
             try
             {
-                fetched = await jobSource.FetchAsync(source, query, cursor, cancellationToken).ConfigureAwait(false);
+                fetched = await jobSource.FetchAsync(source, new JobSearchRequest(query, null, null, SearchSweep.Local), cursor, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {

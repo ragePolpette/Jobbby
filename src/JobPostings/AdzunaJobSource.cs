@@ -1,29 +1,41 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Config;
 using Reporting;
 
 namespace JobPostings;
 
 /// <summary>
-/// Real <see cref="IJobSource"/> backed by the Adzuna Jobs API (Italy search endpoint).
+/// Real <see cref="IJobSource"/> backed by the Adzuna Jobs API, for one country.
+/// Salary is never sent as a filter: it is filtered client-side in stage one, where
+/// predicted and implausible values count as unknown.
 /// </summary>
 public sealed class AdzunaJobSource : IJobSource
 {
-    private const string SearchEndpoint = "https://api.adzuna.com/v1/api/jobs/it/search/1";
+    private static readonly Regex CountryCode = new("^[a-z]{2}$", RegexOptions.Compiled);
 
     private readonly HttpClient _httpClient;
     private readonly string _appId;
     private readonly string _appKey;
     private readonly int _resultsPerPage;
+    private readonly string _searchEndpoint;
+    private readonly decimal _minimumPlausibleSalary;
 
     /// <param name="resultsPerPage">
     /// Caps how many postings Adzuna returns per source per fetch. Kept deliberately
     /// small by default (10) so a first real run doesn't fan out into an uncontrolled
     /// number of GraphRuns - and Telegram approval requests - all at once.
     /// </param>
-    public AdzunaJobSource(HttpClient httpClient, string appId, string appKey, int resultsPerPage = 10)
+    /// <param name="country">Adzuna country code, lower case (e.g. "gb"); part of the URL path.</param>
+    /// <param name="minimumPlausibleSalary">Advertised salaries below this are not yearly figures and count as unknown.</param>
+    public AdzunaJobSource(HttpClient httpClient, string appId, string appKey, string country, int resultsPerPage = 10, decimal minimumPlausibleSalary = 5000m)
     {
+        if (!CountryCode.IsMatch(country))
+            throw new ArgumentException($"Invalid Adzuna country code '{country}'.", nameof(country));
+
+        _searchEndpoint = $"https://api.adzuna.com/v1/api/jobs/{country}/search/1";
+        _minimumPlausibleSalary = minimumPlausibleSalary;
         _httpClient = httpClient;
         _appId = appId;
         _appKey = appKey;
@@ -37,9 +49,11 @@ public sealed class AdzunaJobSource : IJobSource
     /// </summary>
     public static AdzunaJobSource FromEnvironment(
         HttpClient httpClient,
+        string country,
+        int resultsPerPage = 10,
+        decimal minimumPlausibleSalary = 5000m,
         string appIdSecretKey = "Adzuna:AppId",
-        string appKeySecretKey = "Adzuna:AppKey",
-        int resultsPerPage = 10)
+        string appKeySecretKey = "Adzuna:AppKey")
     {
         var appId = SourceWhitelist.ResolveSecret(appIdSecretKey)
             ?? throw new InvalidOperationException(
@@ -51,15 +65,23 @@ public sealed class AdzunaJobSource : IJobSource
                 $"Missing secret '{appKeySecretKey}'. Set it with `dotnet user-secrets set {appKeySecretKey} <value>` " +
                 "in development, or as an environment variable in production.");
 
-        return new AdzunaJobSource(httpClient, appId, appKey, resultsPerPage);
+        return new AdzunaJobSource(httpClient, appId, appKey, country, resultsPerPage, minimumPlausibleSalary);
     }
 
     public async Task<IReadOnlyList<RawPosting>> FetchAsync(
-        SourceDefinition source, string query, SourceCursor? cursor = null, CancellationToken cancellationToken = default)
+        SourceDefinition source, JobSearchRequest request, SourceCursor? cursor = null, CancellationToken cancellationToken = default)
     {
         // sort_by=date asks Adzuna itself to order results newest-first.
-        var url = $"{SearchEndpoint}?app_id={Uri.EscapeDataString(_appId)}&app_key={Uri.EscapeDataString(_appKey)}" +
-                  $"&what={Uri.EscapeDataString(query)}&results_per_page={_resultsPerPage}&sort_by=date&content-type=application/json";
+        var url = $"{_searchEndpoint}?app_id={Uri.EscapeDataString(_appId)}&app_key={Uri.EscapeDataString(_appKey)}" +
+                  $"&what={Uri.EscapeDataString(request.Query)}&results_per_page={_resultsPerPage}&sort_by=date&content-type=application/json";
+
+        // The area applies to the local sweep only; the remote sweep searches the whole country.
+        if (request.Sweep == SearchSweep.Local && !string.IsNullOrWhiteSpace(request.Where))
+        {
+            url += $"&where={Uri.EscapeDataString(request.Where.Trim())}";
+            if (request.DistanceKm is not null)
+                url += $"&distance={request.DistanceKm.Value.ToString(CultureInfo.InvariantCulture)}";
+        }
 
         if (cursor is not null)
         {
@@ -100,7 +122,7 @@ public sealed class AdzunaJobSource : IJobSource
                     ? NullIfEmpty(GetStringOrEmpty(locationElement, "display_name"))
                     : null;
 
-                postings.Add(new RawPosting(title, description, applyUrl, sourceDomain, company, postedAt, location, GetAdvertisedSalaryMaximum(result)));
+                postings.Add(new RawPosting(title, description, applyUrl, sourceDomain, company, postedAt, location, GetAdvertisedSalaryMaximum(result), request.Sweep));
             }
 
             // Best-effort dedup aid alongside max_days_old: drop the one posting we know
@@ -117,13 +139,11 @@ public sealed class AdzunaJobSource : IJobSource
 
     private static string? NullIfEmpty(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
-    // Below this, salary_max is not a yearly gross figure: real responses carry values such
-    // as 38 or 70 (thousands, or hourly/daily rates), which would fail every salary check.
-    private const decimal MinimumPlausibleYearlySalary = 5000m;
-
     // salary_is_predicted = "1" marks Adzuna's own estimate rather than the advertiser's figure;
-    // filtering candidates on a guess would reject postings for the wrong reason.
-    private static decimal? GetAdvertisedSalaryMaximum(JsonElement result)
+    // filtering candidates on a guess would reject postings for the wrong reason. Values below
+    // the plausibility threshold (real responses carry e.g. 38 or 70: thousands, or hourly or
+    // daily rates) are not yearly figures either.
+    private decimal? GetAdvertisedSalaryMaximum(JsonElement result)
     {
         if (result.TryGetProperty("salary_is_predicted", out var predicted) && predicted.ToString() == "1")
             return null;
@@ -132,7 +152,7 @@ public sealed class AdzunaJobSource : IJobSource
             return null;
 
         var value = salary.GetDecimal();
-        return value >= MinimumPlausibleYearlySalary ? value : null;
+        return value >= _minimumPlausibleSalary ? value : null;
     }
 
     // Adzuna nests the employer name as company.display_name (see
