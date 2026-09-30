@@ -13,7 +13,6 @@
 
   <ItemGroup>
     <None Include="..\Config\sources.json" Link="sources.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\Config\searches.json" Link="searches.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="cv.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

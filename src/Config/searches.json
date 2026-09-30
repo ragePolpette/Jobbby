@@ -1,9 +1,0 @@
-{
-  "queries": [
-    ".NET developer",
-    "Artificial Intelligence engineer",
-    "LLM engineer"
-  ],
-  "deriveFromCv": true,
-  "maxDerivedQueries": 3
-}

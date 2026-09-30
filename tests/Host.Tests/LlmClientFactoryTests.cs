@@ -74,6 +74,35 @@ public class LlmClientFactoryTests
         Assert.Contains("gemini", error.Message);
     }
 
+    [Fact]
+    public void Create_FromSettings_ProviderAndModelComeFromSettings_SecretsFromConfiguration()
+    {
+        using var httpClient = new HttpClient();
+        var secrets = Configuration(new()
+        {
+            ["Llm:Provider"] = "claude-cli",
+            ["Llm:Model"] = "ignored",
+            ["Llm:Endpoint"] = "https://llm.example/v1/chat/completions",
+            ["Llm:ApiKey"] = "secret",
+        });
+
+        var selection = LlmClientFactory.Create(new Config.LlmSettings { Provider = "openai", Model = "gpt-x" }, secrets, httpClient);
+
+        Assert.IsType<OpenAiCompatibleLlmClient>(selection.Client);
+        Assert.Equal("gpt-x", selection.Model);
+    }
+
+    [Fact]
+    public void Create_FromSettings_ClaudeCliWithoutModel_UsesDefault()
+    {
+        using var httpClient = new HttpClient();
+
+        var selection = LlmClientFactory.Create(new Config.LlmSettings { Provider = "claude-cli", Model = null }, Configuration(new()), httpClient);
+
+        Assert.IsType<ClaudeCliLlmClient>(selection.Client);
+        Assert.Equal("sonnet", selection.Model);
+    }
+
     private static IConfiguration Configuration(Dictionary<string, string?> values) =>
         new ConfigurationBuilder().AddInMemoryCollection(values).Build();
 }

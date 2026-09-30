@@ -1,293 +1,121 @@
 using Config;
 using CvExtraction;
-using Discovery;
-using GraphEngine;
 using Host;
-using Host.Nodes;
 using JobPostings;
-using Matching;
 using Microsoft.Extensions.Configuration;
 using Notifications;
-using Reporting;
 
+// Thin CLI over JobbbyRunner: everything a run needs comes from the DataDir (settings.json,
+// CV) plus secrets from user-secrets / environment variables.
 var configuration = new ConfigurationBuilder()
     .AddEnvironmentVariables()
     .AddUserSecrets<Program>()
     .Build();
 SourceWhitelist.Configuration = configuration;
 
-using var httpClient = new HttpClient();
-var baseDirectory = AppContext.BaseDirectory;
-var dryRunOptions = DryRunOptions.FromConfiguration(configuration, baseDirectory);
-var dryRunLog = dryRunOptions.Enabled ? new DryRunLog() : null;
-var sourcesPath = Path.Combine(baseDirectory, "sources.json");
-var applicationsPath = Path.Combine(baseDirectory, "applications.json");
-var cvPath = configuration["Jobbby:CvPath"] ?? Path.Combine(baseDirectory, "cv.json");
-var searchesPath = configuration["Jobbby:SearchesConfig"] ?? Path.Combine(baseDirectory, "searches.json");
-var runReportsPath = Path.Combine(baseDirectory, "run-reports.json");
-var cursorsPath = Path.Combine(baseDirectory, "cursors.json");
-
-var sources = SourceWhitelist.LoadFromFile(sourcesPath);
-Console.WriteLine($"Loaded {sources.Count} source(s) from {sourcesPath}");
-
-var cursorsBySource = dryRunOptions.Enabled
-    ? new Dictionary<string, SourceCursor>()
-    : RunReportStore.LoadCursors(cursorsPath);
-Console.WriteLine($"Loaded {cursorsBySource.Count} source cursor(s) from {cursorsPath}");
-
-var llmSelection = LlmClientFactory.Create(configuration, httpClient);
-var llmClient = llmSelection.Client;
-Console.WriteLine($"LLM provider: {llmSelection.Provider}");
-
-var candidateCv = await CvLoader.LoadAsync(cvPath, llmClient);
-Console.WriteLine($"Loaded candidate CV for {candidateCv.Name} ({candidateCv.YearsExperience}y, {candidateCv.Seniority})");
-
-var searchPlan = await SearchQueryPlanner.PlanAsync(ConfigLoader.Load<SearchSettings>(searchesPath), candidateCv, llmClient);
-if (searchPlan.DerivationError is not null)
-    Console.Error.WriteLine($"Could not derive search queries from the CV, using configured ones only: {searchPlan.DerivationError}");
-Console.WriteLine($"Search queries: {string.Join(", ", searchPlan.Queries)}");
-
-ITelegramGateway? gateway = dryRunOptions.Enabled ? null : TelegramGateway.FromEnvironment(httpClient);
-var registry = new PendingApprovalRegistry();
-if (gateway is not null)
+DataDir dataDir;
+try
 {
-    gateway.ReplyReceived += registry.OnReply;
-    gateway.Start();
+    dataDir = DataDir.FromConfiguration(configuration);
+}
+catch (InvalidOperationException ex)
+{
+    Console.Error.WriteLine(ex.Message);
+    return 2;
 }
 
-if (dryRunOptions.Enabled)
+DataDirLock dataDirLock;
+try
 {
-    dryRunLog!.Add("dry_run_started", new
+    dataDirLock = DataDirLock.Acquire(dataDir);
+}
+catch (DataDirLockedException ex)
+{
+    Console.Error.WriteLine(ex.Message);
+    return 2;
+}
+
+using (dataDirLock)
+{
+    var baseDirectory = AppContext.BaseDirectory;
+    var legacyDirectories = new[] { configuration["Jobbby:LegacyDir"], baseDirectory }.OfType<string>();
+    foreach (var note in LegacyMigration.Run(dataDir, legacyDirectories))
+        Console.WriteLine(note);
+
+    // Only an explicitly configured searches.json seeds a new settings.json: the repository ships none.
+    var settingsResult = SettingsStore.LoadOrCreate(dataDir.SettingsPath, configuration["Jobbby:SearchesConfig"]);
+    if (settingsResult.Created)
+        Console.WriteLine($"Creato {dataDir.SettingsPath} con le impostazioni predefinite.");
+    foreach (var note in settingsResult.Notes)
+        Console.WriteLine(note);
+    var settings = settingsResult.Settings;
+
+    var errors = SettingsValidator.Validate(settings, forRun: true);
+    if (errors.Count > 0)
     {
-        dryRunOptions.MaxPostingsPerSource,
-        dryRunOptions.MaxDiscoveryCandidates,
-        Sources = sources.Select(source => new { source.Name, source.BaseUrl }).ToList(),
-        Searches = new { searchPlan.ConfiguredQueries, searchPlan.DerivedQueries, searchPlan.DerivationError },
-        Candidate = new { candidateCv.Name, candidateCv.YearsExperience, candidateCv.Seniority, candidateCv.Skills },
-        Llm = new { llmSelection.Provider, llmSelection.Endpoint, llmSelection.Model },
-    });
-    Console.WriteLine($"DRY RUN enabled: max {dryRunOptions.MaxPostingsPerSource} posting(s) per source and query, no Telegram or persistent state writes.");
-}
-
-var discoveryPath = configuration["Jobbby:DiscoveryConfig"] ?? Environment.GetEnvironmentVariable("JOBBBY_DISCOVERY_CONFIG");
-if (!string.IsNullOrWhiteSpace(discoveryPath))
-{
-    var criteria = ConfigLoader.Load<DiscoveryCriteria>(discoveryPath);
-    var discovery = new DiscoveryEngine(BraveSearchClient.FromEnvironment(httpClient), llmClient);
-
-    if (dryRunOptions.Enabled)
-    {
-        var candidates = await discovery.DiscoverAsync(criteria, maxCandidates: dryRunOptions.MaxDiscoveryCandidates);
-        foreach (var candidate in candidates)
-        {
-            dryRunLog!.Add("discovery_candidate_evaluated", new
-            {
-                candidate.Name,
-                candidate.Url,
-                candidate.ReliabilityScore,
-                candidate.EvaluationSummary,
-                Activated = false,
-            });
-        }
-        Console.WriteLine($"[dry-run] Discovery evaluated {candidates.Count} candidate source(s); none activated.");
-    }
-    else
-    {
-        var reviewService = new DiscoveryReviewService(discovery, gateway!, registry);
-        var review = await reviewService.DiscoverAndReviewAsync(criteria);
-        var approvedPath = Path.Combine(baseDirectory, "approved-sources.json");
-        ApprovedSourceStore.SaveApproved(approvedPath, review.ApprovedSources);
-        Console.WriteLine($"Approved {review.ApprovedSources.Count} discovered source(s).");
-    }
-}
-
-var temporaryLedgerPath = dryRunOptions.Enabled
-    ? Path.Combine(Path.GetTempPath(), $"jobbby-dry-run-{Guid.NewGuid():N}.json")
-    : applicationsPath;
-var ledger = new ApplicationLedger.ApplicationLedger(temporaryLedgerPath);
-var statsCollector = new RunStatsCollector();
-IJobSource jobSource = AdzunaJobSource.FromEnvironment(
-    httpClient,
-    configuration["Jobbby:Country"] ?? throw new InvalidOperationException("Missing Jobbby:Country (Adzuna country code)."),
-    resultsPerPage: dryRunOptions.Enabled ? dryRunOptions.MaxPostingsPerSource : 10);
-var definition = HostGraph.Build(
-    gateway ?? new MockTelegramGateway(),
-    registry,
-    ledger,
-    llmClient,
-    candidateCv,
-    statsCollector,
-    dryRun: dryRunOptions.Enabled);
-
-var runAt = DateTimeOffset.UtcNow;
-var updatedCursors = await Task.WhenAll(
-    sources.Select(source => RunForSourceAsync(
-        definition,
-        jobSource,
-        source,
-        searchPlan.Queries,
-        cursorsBySource,
-        statsCollector,
-        dryRunOptions.Enabled ? dryRunOptions.MaxPostingsPerSource : null,
-        runAt,
-        dryRunLog)));
-
-gateway?.Stop();
-
-var mergedCursors = new Dictionary<string, SourceCursor>(cursorsBySource);
-foreach (var cursor in updatedCursors.SelectMany(cursors => cursors))
-    mergedCursors[cursor.SourceName] = cursor;
-
-var report = statsCollector.BuildReport(runAt);
-var summary = BuildSummaryMessage(report);
-Console.WriteLine(summary);
-
-if (dryRunOptions.Enabled)
-{
-    dryRunLog!.Add("dry_run_completed", new { Report = report, PersistentWrites = false, TelegramMessages = 0 });
-    dryRunLog.Save(dryRunOptions.LogPath);
-    if (File.Exists(temporaryLedgerPath))
-        File.Delete(temporaryLedgerPath);
-    Console.WriteLine($"Detailed dry-run log written to {dryRunOptions.LogPath}");
-}
-else
-{
-    RunReportStore.SaveCursors(cursorsPath, mergedCursors.Values.ToList());
-    RunReportStore.AppendRunReport(runReportsPath, report);
-    await gateway!.SendAsync(summary);
-}
-
-Console.WriteLine("All source runs completed.");
-
-static async Task<IReadOnlyList<SourceCursor>> RunForSourceAsync(
-    GraphDefinition definition,
-    IJobSource jobSource,
-    SourceDefinition source,
-    IReadOnlyList<string> queries,
-    IReadOnlyDictionary<string, SourceCursor> cursorsBySource,
-    RunStatsCollector statsCollector,
-    int? postingLimitPerQuery,
-    DateTimeOffset runAt,
-    DryRunLog? dryRunLog)
-{
-    var country = Environment.GetEnvironmentVariable("Jobbby__Country") ?? throw new InvalidOperationException("Missing Jobbby:Country (Adzuna country code).");
-    var fetch = await MultiQueryFetcher.FetchAsync(jobSource, source, queries, country, new AreaSettings { Country = country },
-        new RemoteKeywordFilter(Array.Empty<string>()), cursorsBySource, postingLimitPerQuery, runAt);
-
-    foreach (var query in fetch.Queries)
-    {
-        if (query.Error is not null)
-        {
-            statsCollector.IncrementError(source.Name);
-            dryRunLog?.Add("source_fetch_failed", new { Source = source.Name, query.Query, query.Error });
-            Console.Error.WriteLine($"[{source.Name}] fetch failed for '{query.Query}': {query.Error}");
-        }
-        else
-        {
-            dryRunLog?.Add("source_fetched", new { Source = source.Name, query.Query, query.Returned });
-            Console.WriteLine($"[{source.Name}] '{query.Query}': {query.Returned} posting(s)");
-        }
+        Console.Error.WriteLine($"Impostazioni non valide in {dataDir.SettingsPath}:");
+        foreach (var error in errors)
+            Console.Error.WriteLine($"  {error.Field}: {error.Message}");
+        return 2;
     }
 
-    var rawPostings = fetch.Postings;
-    statsCollector.IncrementTotalFetched(rawPostings.Count);
-    dryRunLog?.Add("source_postings_merged", new { Source = source.Name, Processed = rawPostings.Count });
-    Console.WriteLine($"[{source.Name}] processing {rawPostings.Count} distinct posting(s)");
+    var mode = DryRunOptions.FromConfiguration(configuration, baseDirectory).Enabled ? RunMode.Dry : RunMode.Normal;
+    using var httpClient = new HttpClient();
+    var llm = LlmClientFactory.Create(settings.Llm, configuration, httpClient);
+    Console.WriteLine($"LLM: {llm.Provider} {llm.Model}");
 
-    var postingRuns = rawPostings.Select(rawPosting => RunForPostingAsync(definition, source, rawPosting, statsCollector, dryRunLog));
-    await Task.WhenAll(postingRuns);
-
-    return fetch.Queries.Where(query => query.Cursor is not null).Select(query => query.Cursor!).ToList();
-}
-
-static async Task RunForPostingAsync(
-    GraphDefinition definition,
-    SourceDefinition source,
-    RawPosting rawPosting,
-    RunStatsCollector statsCollector,
-    DryRunLog? dryRunLog)
-{
-    var state = new GraphState(new Dictionary<string, object>
+    var cvPath = configuration["Jobbby:CvPath"]
+        ?? new[] { dataDir.CvExtractedPath, dataDir.CvJsonPath, dataDir.CvPdfPath }.FirstOrDefault(File.Exists);
+    if (cvPath is null)
     {
-        [NormalizeJobPostingNode.RawPostingStateKey] = rawPosting,
-        [JobApplicationStateKeys.SourceUrl] = source.BaseUrl,
-    });
-
-    Console.WriteLine($"[{source.Name}] starting: {rawPosting.RawTitle}");
-
-    try
-    {
-        await definition.CreateRun().RunAsync(HostGraph.NormalizeJobPostingNodeName, state);
-        var outcome = DescribeOutcome(state);
-        var posting = state.Get<JobPosting>(NormalizeJobPostingNode.JobPostingStateKey);
-        dryRunLog?.Add("posting_evaluated", new
-        {
-            Source = source.Name,
-            rawPosting.RawTitle,
-            rawPosting.Company,
-            rawPosting.ApplyUrl,
-            Normalized = posting is null ? null : new { posting.Title, posting.Company, posting.SeniorityLevel, posting.RequiredStack, posting.Location, WorkMode = posting.WorkMode.ToString(), posting.MinYearsExperience, posting.SalaryMaximum },
-            StageOnePassed = state.Get<bool>(ScoreMatchNode.StageOnePassedStateKey),
-            StageOneReason = state.Get<string>(ScoreMatchNode.StageOneReasonStateKey),
-            MissingRequirements = state.Get<List<string>>(ScoreMatchNode.MissingRequirementsStateKey),
-            PreferenceWarnings = state.Get<List<string>>(ScoreMatchNode.PreferenceWarningsStateKey),
-            MatchConfidence = state.Get<double>(ScoreMatchNode.MatchConfidenceStateKey),
-            MatchReasoning = state.Get<string>(ScoreMatchNode.MatchJudgmentReasoningStateKey),
-            Outcome = outcome,
-            ActionTaken = "none",
-        });
-        Console.WriteLine($"[{source.Name}] esito: {outcome}");
+        Console.Error.WriteLine($"Nessun CV trovato: metti cv.pdf o cv.json in {dataDir.Root} (oppure imposta Jobbby:CvPath).");
+        return 2;
     }
-    catch (Exception ex)
+
+    var cvResult = await CvLoader.LoadWithNotesAsync(cvPath, llm.Client);
+    foreach (var field in cvResult.IgnoredFields)
+        Console.WriteLine($"Campo del CV ignorato, ora si imposta in settings.json: {field}");
+    Console.WriteLine($"CV: {cvResult.Cv.Name} ({cvResult.Cv.YearsExperience} anni) da {cvPath}");
+
+    var sources = SourceWhitelist.LoadFromFile(Path.Combine(baseDirectory, "sources.json"));
+    var jobSource = AdzunaJobSource.FromEnvironment(
+        httpClient,
+        settings.Area.Country!,
+        resultsPerPage: mode == RunMode.Dry ? settings.DryRun.MaxPostingsPerQuery : 10,
+        minimumPlausibleSalary: settings.Salary.MinimumPlausible);
+    ITelegramGateway? gateway = mode == RunMode.Normal ? TelegramGateway.FromEnvironment(httpClient) : null;
+    var discoveryConfigured = !string.IsNullOrWhiteSpace(configuration["Jobbby:DiscoveryConfig"]);
+
+    using var cancellation = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, eventArgs) =>
     {
-        statsCollector.IncrementError(source.Name);
-        dryRunLog?.Add("posting_failed", new { Source = source.Name, rawPosting.RawTitle, Error = ex.Message });
-        Console.Error.WriteLine($"[{source.Name}] run failed for '{rawPosting.RawTitle}': {ex.Message}");
+        eventArgs.Cancel = true;
+        Console.Error.WriteLine("Interruzione richiesta: fermo le chiamate in corso...");
+        cancellation.Cancel();
+    };
+
+    var runner = new JobbbyRunner(dataDir, new RunDependencies(jobSource, llm.Client, gateway, sources), discoveryConfigured);
+    var progress = new ConsoleProgress();
+    var summary = await runner.RunAsync(settings, cvResult.Cv, mode, progress, cancellation.Token);
+    Console.WriteLine($"Chiamate Adzuna: {summary.AdzunaCalls}");
+
+    if (summary.DryRunLog is not null)
+    {
+        var logPath = configuration["Jobbby:DryRunLogPath"]
+            ?? Path.Combine(dataDir.RunsDirectory, $"dry-run-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.json");
+        summary.DryRunLog.Save(logPath);
+        Console.WriteLine($"Log della dry run: {logPath}");
+    }
+
+    return summary.Cancelled ? 130 : 0;
+}
+
+/// <summary>Writes run events synchronously, so lines appear in order.</summary>
+internal sealed class ConsoleProgress : IProgress<RunEvent>
+{
+    public void Report(RunEvent value)
+    {
+        var writer = value.Kind is "fetch_failed" or "posting_failed" or "warning" ? Console.Error : Console.Out;
+        writer.WriteLine(value.Message);
     }
 }
-
-static string DescribeOutcome(GraphState state)
-{
-    if (state.Get<bool>(DedupeCheckNode.AlreadyAppliedStateKey))
-        return "scartato per dedupe";
-    if (!state.Get<bool>(ScoreMatchNode.StageOnePassedStateKey))
-        return $"scartato dal filtro stage 1 ({state.Get<string>(ScoreMatchNode.StageOneReasonStateKey)})";
-    if (!state.ContainsKey(RecordIfApprovedNode.OutcomeStateKey))
-        return $"valutato senza azioni (confidenza {state.Get<double>(ScoreMatchNode.MatchConfidenceStateKey):0.00})";
-    if (state.Get<bool>(RecordIfApprovedNode.AutoApprovedStateKey))
-        return "selezionato automaticamente";
-    if (state.Get<string>(AskApprovalNode.OutcomeStateKey) == HumanInputNode.SkippedNoResponseOutcome)
-        return "in attesa di approvazione";
-    return state.Get<bool>(RecordIfApprovedNode.RecordedStateKey) ? "approvato" : "rifiutato";
-}
-
-static string BuildSummaryMessage(RunReport report)
-{
-    var stageTwo = report.StageTwoBreakdown.Count == 0
-        ? "nessuna"
-        : string.Join(", ", report.StageTwoBreakdown.Select(kv => $"{TranslateCategory(kv.Key)}: {kv.Value}"));
-    var errors = report.ErrorsPerSource.Count == 0
-        ? "nessuno"
-        : string.Join(", ", report.ErrorsPerSource.Select(kv => $"{kv.Key}: {kv.Value}"));
-
-    return $"""
-        Riepilogo run {report.RunAt:yyyy-MM-dd HH:mm} UTC
-        Annunci trovati: {report.TotalFetched}
-        Scartati per dedupe: {report.SkippedDuplicate}
-        Scartati al filtro stage 1: {report.RejectedStageOne}
-        Valutazioni stage 2: {stageTwo}
-        Selezionati automaticamente: {report.AutoApproved}
-        Approvati da un umano: {report.HumanApproved}
-        Rifiutati da un umano: {report.HumanRejected}
-        Scaduti senza risposta: {report.TimedOut}
-        Errori per fonte: {errors}
-        """;
-}
-
-static string TranslateCategory(string category) => category switch
-{
-    MatchCategories.Strong => "forte",
-    MatchCategories.Borderline => "borderline",
-    MatchCategories.Weak => "debole",
-    _ => category,
-};

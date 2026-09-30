@@ -1,70 +1,63 @@
 # Jobbby
 
-Jobbby raccoglie annunci, li normalizza con un LLM, valuta la compatibilità con il CV e conserva gli esiti operativi.
+Jobbby raccoglie annunci, li normalizza con un LLM, valuta la compatibilità con il CV e conserva gli esiti operativi. Funziona per qualsiasi professione e per i paesi supportati da Adzuna.
 
-## Ricerche e CV
+## DataDir
 
-Le fonti (`src/Config/sources.json`) dicono *dove* cercare, le ricerche (`src/Config/searches.json`) *cosa*: ogni query viene eseguita su ogni fonte.
+Tutto lo stato di un'installazione sta in una cartella, indicata con `Jobbby__DataDir` (obbligatoria):
+
+| File | Contenuto |
+|---|---|
+| `settings.json` | impostazioni (creato con valori neutri al primo avvio) |
+| `cv.pdf`, `cv.json` o `cv.extracted.json` | il CV; in alternativa `Jobbby__CvPath` |
+| `applications.json`, `cursors.json`, `run-reports.json` | registro degli esiti, cursori delle ricerche, riepiloghi |
+| `runs/` | log delle dry run |
+
+CLI e (in seguito) UI web girano solo nel container, un processo alla volta per `DataDir`: un secondo processo esce subito con un messaggio chiaro. Al primo avvio `applications.json` e `run-reports.json` vengono copiati dalla directory dell'eseguibile, se presenti; `cursors.json` no, perché le chiavi ora includono paese e zona.
+
+## Impostazioni (`settings.json`)
 
 ```json
 {
-  "queries": [".NET developer", "AI engineer"],
-  "deriveFromCv": true,
-  "maxDerivedQueries": 3
+  "searches": { "queries": [], "deriveFromCv": true, "maxDerivedQueries": 3 },
+  "area": { "country": null, "where": "", "distanceKm": null, "acceptsRemote": false },
+  "salary": { "minimumYearly": null, "minimumPlausible": 5000 },
+  "evaluation": { "autoApproveThreshold": 0.7 },
+  "llm": { "provider": "claude-cli", "model": "sonnet" },
+  "dryRun": { "maxPostingsPerQuery": 3 },
+  "remoteSweep": { "keywords": {} }
 }
 ```
 
-Adzuna ignora le sigle di due lettere: "AI engineer" viene cercato come "engineer" e restituisce annunci di ogni tipo. Usare la forma estesa ("Artificial Intelligence engineer") o sigle più lunghe ("LLM engineer").
+- `area.country` è obbligatorio per una run: codice Adzuna (`at`, `au`, `be`, `br`, `ca`, `ch`, `de`, `es`, `fr`, `gb`, `in`, `it`, `mx`, `nl`, `nz`, `pl`, `sg`, `us`, `za`).
+- `area.where` e `distanceKm` restringono la ricerca ad Adzuna; la località indicata da Adzuna fa fede, senza ulteriori controlli testuali.
+- Con `acceptsRemote` e una località, ogni query fa anche una ricerca in tutto il paese: i risultati passano solo se titolo o estratto contengono una delle parole di `remoteSweep.keywords` (per lingua, es. `{ "it": ["da remoto"], "en": ["remote"] }`) e se l'LLM li classifica come interamente da remoto. Senza parole chiave la ricerca remota resta spenta. Costo: una chiamata Adzuna in più per query.
+- `salary.minimumYearly` esclude solo gli annunci con retribuzione nota e inferiore; gli annunci senza retribuzione restano. Sotto `minimumPlausible` una retribuzione non è considerata annua ed è trattata come sconosciuta. Adzuna non riceve filtri di retribuzione.
+- Con `deriveFromCv` l'LLM aggiunge fino a `maxDerivedQueries` ruoli ricavati dal CV. Adzuna ignora le sigle di due lettere ("AI engineer" diventa "engineer"): meglio la forma estesa.
+- Gli annunci trovati da più query o ripubblicati con un nuovo link vengono valutati una volta sola.
+- Un `searches.json` esistente può inizializzare le ricerche del primo `settings.json` con `Jobbby__SearchesConfig`.
 
-Con `deriveFromCv` l'LLM aggiunge fino a `maxDerivedQueries` (massimo 10) ruoli ricavati dal CV, senza ripetere quelli già configurati. Se la derivazione fallisce si usano solo le query configurate. Gli annunci restituiti da più query, o ripubblicati con un nuovo link e l'azienda scritta diversamente ("Acme S.r.l" / "ACME SRL"), vengono valutati una volta sola, e ogni coppia fonte/query ha il proprio cursore. Un file diverso può essere indicato con `Jobbby__SearchesConfig`.
+## Segreti
 
-Il CV predefinito è `src/Host/cv.json`. Per usare un PDF, tenuto fuori dal repository, indicarne il percorso con `Jobbby__CvPath=/percorso/cv.pdf`: il testo viene estratto e strutturato dall'LLM a ogni esecuzione.
-
-## Dry run sicura
-
-La dry run usa Adzuna e il provider LLM reali, ma non:
-
-- invia messaggi Telegram;
-- scrive ledger, cursori, report o fonti approvate;
-- seleziona, approva o rifiuta annunci;
-- attiva fonti trovate tramite Discovery.
-
-Impostare i segreti dalla directory `src/Host`:
+Dalla directory `src/Host`:
 
 ```bash
 dotnet user-secrets set "Adzuna:AppId" "..."
 dotnet user-secrets set "Adzuna:AppKey" "..."
-dotnet user-secrets set "Llm:Endpoint" "..."
-dotnet user-secrets set "Llm:ApiKey" "..."
-dotnet user-secrets set "Llm:Model" "..."
 ```
+
+Con `llm.provider` = `openai` servono anche `Llm:Endpoint` (URL completo di chat/completions) e `Llm:ApiKey`.
 
 ### LLM tramite Claude Code (`claude -p`)
 
-In alternativa a un endpoint OpenAI-compatibile, soprattutto per i test, si può usare il CLI di Claude Code già autenticato. In questo caso `Llm:Endpoint` e `Llm:ApiKey` non servono:
+Con `llm.provider` = `claude-cli` si usa il CLI di Claude Code già autenticato, senza endpoint né API key. Il CLI viene lanciato senza strumenti, server MCP né impostazioni utente/progetto, con un timeout di 120 secondi e al massimo 2 processi in parallelo. Opzioni di configurazione: `Llm:ClaudePath` (default `claude`), `Llm:TimeoutSeconds`, `Llm:MaxConcurrency`. Ogni chiamata avvia un processo, quindi è più lento dell'API diretta.
+
+## Esecuzione
 
 ```bash
-dotnet user-secrets set "Llm:Provider" "claude-cli"
-dotnet user-secrets set "Llm:Model" "haiku"    # facoltativo, default sonnet
+Jobbby__DataDir=/percorso/dati Jobbby__DryRun=true dotnet run --project src/Host/Host.csproj
 ```
 
-Il CLI viene lanciato senza strumenti, server MCP né impostazioni utente/progetto, con un timeout di 120 secondi e al massimo 2 processi in parallelo. Opzioni: `Llm:ClaudePath` (default `claude`), `Llm:TimeoutSeconds`, `Llm:MaxConcurrency`. L'autenticazione è quella del CLI (`claude` interattivo e `/login`, oppure `ANTHROPIC_API_KEY`). Ogni chiamata avvia un processo, quindi è più lento dell'API diretta.
+La dry run usa Adzuna e l'LLM reali ma non scrive registro, cursori né riepiloghi e non invia messaggi; valuta al massimo `dryRun.maxPostingsPerQuery` annunci per query. Il log dettagliato va in `runs/dry-run-YYYYMMDD-HHMMSS.json` (oppure `Jobbby__DryRunLogPath`). `Ctrl+C` interrompe la run fermando anche le chiamate LLM in corso; cursori e riepilogo non vengono salvati.
 
-Eseguire con limiti espliciti:
-
-```bash
-Jobbby__DryRun=true \
-Jobbby__DryRunMaxPostingsPerSource=3 \
-Jobbby__DryRunMaxDiscoveryCandidates=2 \
-dotnet run --project src/Host/Host.csproj
-```
-
-La ricerca fonti resta disabilitata se `Jobbby__DiscoveryConfig` non è impostato. Per abilitarla durante la simulazione:
-
-```bash
-Jobbby__DiscoveryConfig=/percorso/discovery.json
-```
-
-Il log JSON dettagliato viene creato nella directory di output del programma con nome `dry-run-YYYYMMDD-HHMMSS.json`. Un percorso diverso può essere indicato tramite `Jobbby__DryRunLogPath`. Il log include configurazione non segreta, fonti interrogate, quantità restituite e processate, normalizzazione, requisiti mancanti, avvisi, confidenza, motivazione LLM, errori e conferma che nessuna azione è stata eseguita.
-
-Limiti predefiniti: 3 annunci per fonte e per query, 3 candidati Discovery. I massimi accettati sono rispettivamente 20 e 10.
+Senza `Jobbby__DryRun` la run è normale: registra esiti e cursori e, finché le approvazioni non passano alla UI, chiede su Telegram gli annunci sotto la soglia (`Telegram:BotToken`, `Telegram:ChatId`). Discovery non fa parte delle run: se `Jobbby__DiscoveryConfig` è impostato viene ignorato con un avviso.

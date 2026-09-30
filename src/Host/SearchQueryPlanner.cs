@@ -47,7 +47,7 @@ public static class SearchQueryPlanner
         if (all.Count == 0)
         {
             throw new InvalidOperationException(derivationError is null
-                ? "No search queries configured. Add queries to searches.json or enable deriveFromCv."
+                ? "No search queries configured. Add queries to settings.json (searches.queries) or enable searches.deriveFromCv."
                 : $"No search queries configured and deriving them from the CV failed: {derivationError}");
         }
 
