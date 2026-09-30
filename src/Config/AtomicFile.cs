@@ -6,7 +6,13 @@ namespace Config;
 /// </summary>
 public static class AtomicFile
 {
-    public static void WriteAllText(string path, string content)
+    public static void WriteAllText(string path, string content) =>
+        Write(path, temporary => File.WriteAllText(temporary, content));
+
+    public static void WriteAllBytes(string path, byte[] content) =>
+        Write(path, temporary => File.WriteAllBytes(temporary, content));
+
+    private static void Write(string path, Action<string> writeTemporary)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(path));
         if (!string.IsNullOrEmpty(directory))
@@ -15,7 +21,7 @@ public static class AtomicFile
         var temporary = $"{path}.tmp-{Guid.NewGuid():N}";
         try
         {
-            File.WriteAllText(temporary, content);
+            writeTemporary(temporary);
             File.Move(temporary, path, overwrite: true);
         }
         finally
