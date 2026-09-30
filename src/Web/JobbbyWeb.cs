@@ -36,6 +36,8 @@ public static class JobbbyWeb
         builder.Services.AddSingleton<SettingsService>();
         builder.Services.AddSingleton<LedgerHolder>();
         builder.Services.AddSingleton<RunManager>();
+        builder.Services.AddSingleton(new CvStore(dataDir));
+        builder.Services.AddSingleton<Web.Api.CvGate>();
         builder.Services.AddSingleton<IRunDependenciesFactory, DefaultRunDependenciesFactory>();
         builder.Services.AddHttpClient("jobbby");
         builder.Services.ConfigureHttpJsonOptions(options =>

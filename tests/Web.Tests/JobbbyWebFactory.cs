@@ -69,7 +69,21 @@ public sealed class JobbbyWebFactory : WebApplicationFactory<Program>
     {
         public RunDependencies Create(JobbbySettings settings, RunMode mode, Func<IReadOnlyList<string>, ApplicationLedger.ApplicationLedger> ledger) =>
             new(factory.Source, factory.Llm, new[] { new SourceDefinition { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" } }, ledger);
+
+        public ILlmClient CreateLlm(JobbbySettings settings) => factory.Llm;
     }
+}
+
+/// <summary>An LLM answering every prompt with a function of it.</summary>
+public sealed class FuncLlm(Func<string, string> respond) : ILlmClient
+{
+    public Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default) => Task.FromResult(respond(prompt));
+}
+
+/// <summary>Like <see cref="FuncLlm"/>, for answers that wait on something.</summary>
+public sealed class AsyncFuncLlm(Func<string, Task<string>> respond) : ILlmClient
+{
+    public Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default) => respond(prompt);
 }
 
 /// <summary>Answers normalization with fixed fields and stage two with a Borderline judgment (Pending).</summary>
