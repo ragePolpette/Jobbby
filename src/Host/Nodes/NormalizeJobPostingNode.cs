@@ -31,7 +31,7 @@ public sealed class NormalizeJobPostingNode : INode
         _llmClient = llmClient;
     }
 
-    public async Task<NodeResult> ExecuteAsync(GraphState state)
+    public async Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default)
     {
         var rawPosting = state.Get<RawPosting>(RawPostingStateKey)
             ?? throw new InvalidOperationException($"No RawPosting found in state under '{RawPostingStateKey}'.");
@@ -39,7 +39,7 @@ public sealed class NormalizeJobPostingNode : INode
         var sourceUrl = state.Get<string>(JobApplicationStateKeys.SourceUrl) ?? string.Empty;
 
         var needsCompanyFromLlm = string.IsNullOrWhiteSpace(rawPosting.Company);
-        var extraction = await ExtractAsync(rawPosting, needsCompanyFromLlm).ConfigureAwait(false);
+        var extraction = await ExtractAsync(rawPosting, needsCompanyFromLlm, cancellationToken).ConfigureAwait(false);
         var company = needsCompanyFromLlm ? extraction.Company : rawPosting.Company;
         var applyChannel = DetermineApplyChannel(rawPosting.ApplyUrl, rawPosting.SourceDomain);
 
@@ -80,10 +80,10 @@ public sealed class NormalizeJobPostingNode : INode
         return ApplyChannels.ExternalPlatform;
     }
 
-    private async Task<ExtractionResult> ExtractAsync(RawPosting rawPosting, bool includeCompany)
+    private async Task<ExtractionResult> ExtractAsync(RawPosting rawPosting, bool includeCompany, CancellationToken cancellationToken)
     {
         var prompt = BuildPrompt(rawPosting, includeCompany);
-        var response = await _llmClient.CompleteAsync(prompt).ConfigureAwait(false);
+        var response = await _llmClient.CompleteAsync(prompt, cancellationToken).ConfigureAwait(false);
 
         return JsonSerializer.Deserialize<ExtractionResult>(response, JsonOptions)
             ?? throw new InvalidOperationException("LLM response could not be parsed as job posting extraction JSON.");

@@ -34,7 +34,7 @@ public sealed class ScoreMatchNode : INode
         _statsCollector = statsCollector;
     }
 
-    public async Task<NodeResult> ExecuteAsync(GraphState state)
+    public async Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default)
     {
         var jobPosting = state.Get<JobPosting>(NormalizeJobPostingNode.JobPostingStateKey)
             ?? throw new InvalidOperationException($"No JobPosting found in state under '{NormalizeJobPostingNode.JobPostingStateKey}'.");
@@ -57,7 +57,7 @@ public sealed class ScoreMatchNode : INode
             });
         }
 
-        var judgment = await _stageTwoJudge.JudgeAsync(jobPosting, _candidateCv).ConfigureAwait(false);
+        var judgment = await _stageTwoJudge.JudgeAsync(jobPosting, _candidateCv, cancellationToken).ConfigureAwait(false);
         var matchConfidence = MatchConfidenceMapper.ToMatchConfidence(judgment);
 
         _statsCollector.IncrementStageTwoCategory(judgment.Category);

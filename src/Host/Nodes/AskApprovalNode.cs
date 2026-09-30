@@ -28,7 +28,7 @@ public sealed class AskApprovalNode : INode
             timeout: timeout);
     }
 
-    public async Task<NodeResult> ExecuteAsync(GraphState state)
+    public async Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default)
     {
         var company = state.Get<string>(JobApplicationStateKeys.Company) ?? string.Empty;
         var title = state.Get<string>(JobApplicationStateKeys.Title) ?? string.Empty;
@@ -38,7 +38,7 @@ public sealed class AskApprovalNode : INode
         // before we delegate to it.
         state.Set(PromptStateKey, prompt);
 
-        var innerResult = await _humanInputNode.ExecuteAsync(state).ConfigureAwait(false);
+        var innerResult = await _humanInputNode.ExecuteAsync(state, cancellationToken).ConfigureAwait(false);
 
         var updates = new Dictionary<string, object>(innerResult.Updates)
         {

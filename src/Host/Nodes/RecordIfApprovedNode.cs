@@ -30,7 +30,7 @@ public sealed class RecordIfApprovedNode : INode
         _statsCollector = statsCollector;
     }
 
-    public Task<NodeResult> ExecuteAsync(GraphState state)
+    public Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default)
     {
         var autoApproved = state.Get<bool>(AutoApprovedStateKey);
         var response = state.Get<string>(AskApprovalNode.ResponseStateKey) ?? string.Empty;

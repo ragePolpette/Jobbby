@@ -13,5 +13,5 @@ internal sealed class DelegateNode : INode
         _execute = execute;
     }
 
-    public Task<NodeResult> ExecuteAsync(GraphState state) => Task.FromResult(_execute(state));
+    public Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default) => Task.FromResult(_execute(state));
 }

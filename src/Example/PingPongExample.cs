@@ -15,7 +15,7 @@ public static class PingPongExample
 
     private sealed class PingNode : INode
     {
-        public Task<NodeResult> ExecuteAsync(GraphState state)
+        public Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default)
         {
             var round = state.Get<int>("round");
             Console.WriteLine($"[Ping] starting round {round + 1}/{TotalRounds}");
@@ -25,7 +25,7 @@ public static class PingPongExample
 
     private sealed class PongNode : INode
     {
-        public Task<NodeResult> ExecuteAsync(GraphState state)
+        public Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default)
         {
             var completedRound = state.Get<int>("round") + 1;
             Console.WriteLine($"[Pong] completing round {completedRound}/{TotalRounds}");
