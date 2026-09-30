@@ -116,7 +116,7 @@ public sealed class JobbbyRunner
             stats,
             confidenceThreshold: settings.Evaluation.AutoApproveThreshold,
             dryRun: mode == RunMode.Dry,
-            stageOneCriteria: StageOneCriteria.FromSettings(settings.Area, settings.Salary));
+            stageOneCriteria: StageOneCriteria.FromSettings(settings.Area, settings.Salary, SkillAliases.Load(_dataDir.SkillAliasesPath)));
         var remoteFilter = new RemoteKeywordFilter(settings.RemoteSweep.AllKeywords());
         if (settings.Area.AcceptsRemote && remoteFilter.IsEmpty && !string.IsNullOrWhiteSpace(settings.Area.Where))
             Warn("Remoto accettato ma nessuna parola chiave configurata: la ricerca remota fuori zona è disattivata.");

@@ -18,6 +18,7 @@ public sealed record DataDir(string Root)
     public string CursorsPath => Path.Combine(Root, "cursors.json");
     public string RunReportsPath => Path.Combine(Root, "run-reports.json");
     public string LockPath => Path.Combine(Root, ".jobbby.lock");
+    public string SkillAliasesPath => Path.Combine(Root, "skill-aliases.json");
     public string RunsDirectory => Path.Combine(Root, "runs");
 
     public static DataDir FromConfiguration(IConfiguration configuration)

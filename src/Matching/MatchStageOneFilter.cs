@@ -19,7 +19,7 @@ public static class MatchStageOneFilter
 {
     public static MatchStageOneResult Evaluate(JobPosting posting, CvData cv, StageOneCriteria criteria)
     {
-        var candidateSkillMatcher = new SkillMatcher(BuildCandidateSkills(cv));
+        var candidateSkillMatcher = new SkillMatcher(BuildCandidateSkills(cv), criteria.Aliases);
         var requiredSkills = posting.RequiredSkills ?? new List<string>();
         var mustHaveSkills = posting.MustHaveSkills ?? new List<string>();
         var preferredSkills = posting.PreferredSkills ?? new List<string>();

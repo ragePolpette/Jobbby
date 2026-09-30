@@ -1,73 +1,39 @@
 using System.Text.RegularExpressions;
+using Config;
 
 namespace Matching;
 
 /// <summary>
-/// Decides whether a candidate's skills cover a skill named in a posting. CVs and
-/// postings name the same technology differently (".NET Core" vs ".NET", "API REST" vs
-/// "REST API", "Vue" vs "Vue.js"), so exact string equality rejects good matches. Skills
-/// are normalized (case, spacing, trailing versions, known aliases) and two skills match
-/// when they are equal or one is a more specific variant of the other (".NET Core" and
-/// ".NET" share the ".net" root). This is a coarse stage-one check: it errs toward
-/// matching, stage two's LLM judgment does the fine-grained comparison.
+/// Decides whether a candidate's skills cover a skill named in a posting. CVs and postings
+/// name the same skill differently, so exact string equality rejects good matches. Built-in
+/// rules are profession-neutral: case, spacing and a trailing version number are ignored,
+/// and a more specific variant covers the generic skill ("Triage infermieristico" covers
+/// "Triage", ".NET Core" covers ".NET"). Anything profession-specific ("csharp" = "C#",
+/// "ASP.NET Core" implies ".NET") comes from <see cref="SkillAliases"/>, i.e. from the
+/// user's data. A coarse stage-one check: it errs toward matching, stage two's LLM
+/// judgment does the fine-grained comparison.
 /// </summary>
 public sealed class SkillMatcher
 {
-    private static readonly Dictionary<string, string> Aliases = new(StringComparer.Ordinal)
-    {
-        ["csharp"] = "c#",
-        ["c sharp"] = "c#",
-        ["dotnet"] = ".net",
-        ["dot net"] = ".net",
-        ["net"] = ".net",
-        ["api rest"] = "rest api",
-        ["rest"] = "rest api",
-        ["restful"] = "rest api",
-        ["restful api"] = "rest api",
-        ["restful apis"] = "rest api",
-        ["rest apis"] = "rest api",
-        ["ef"] = "entity framework",
-        ["ef core"] = "entity framework core",
-        ["js"] = "javascript",
-        ["ts"] = "typescript",
-        ["vue"] = "vue.js",
-        ["vuejs"] = "vue.js",
-        ["react.js"] = "react",
-        ["reactjs"] = "react",
-        ["node"] = "node.js",
-        ["nodejs"] = "node.js",
-        ["mssql"] = "sql server",
-        ["ms sql"] = "sql server",
-        ["microsoft sql server"] = "sql server",
-        ["postgres"] = "postgresql",
-        ["k8s"] = "kubernetes",
-        ["golang"] = "go",
-    };
-
-    /// <summary>Knowing the key implies knowing each value, beyond what the prefix rule covers.</summary>
-    private static readonly Dictionary<string, string[]> Implications = new(StringComparer.Ordinal)
-    {
-        ["asp.net"] = new[] { ".net" },
-        ["asp.net core"] = new[] { ".net", ".net core" },
-        ["asp.net mvc"] = new[] { ".net" },
-        ["entity framework"] = new[] { ".net" },
-        ["entity framework core"] = new[] { ".net", ".net core" },
-        ["wcf"] = new[] { ".net" },
-        ["sql server"] = new[] { "sql" },
-        ["postgresql"] = new[] { "sql" },
-        ["mysql"] = new[] { "sql" },
-        ["typescript"] = new[] { "javascript" },
-    };
-
+    private readonly Dictionary<string, string> _aliases;
     private readonly HashSet<string> _candidateSkills;
 
-    public SkillMatcher(IEnumerable<string> candidateSkills)
+    public SkillMatcher(IEnumerable<string> candidateSkills, SkillAliases? aliases = null)
     {
+        aliases ??= SkillAliases.Empty;
+        _aliases = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (spelling, canonical) in aliases.Aliases)
+            _aliases[Clean(spelling)] = Clean(canonical);
+
+        var implies = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var (skill, implied) in aliases.Implies)
+            implies[Normalize(skill)] = implied.Select(Normalize).ToList();
+
         _candidateSkills = new HashSet<string>(StringComparer.Ordinal);
         foreach (var skill in candidateSkills.Select(Normalize).Where(skill => skill.Length > 0))
         {
             _candidateSkills.Add(skill);
-            if (Implications.TryGetValue(skill, out var implied))
+            if (implies.TryGetValue(skill, out var implied))
                 _candidateSkills.UnionWith(implied);
         }
     }
@@ -84,11 +50,16 @@ public sealed class SkillMatcher
             required.StartsWith(candidate + " ", StringComparison.Ordinal));
     }
 
-    public static string Normalize(string skill)
+    private string Normalize(string skill)
+    {
+        var cleaned = Clean(skill);
+        return _aliases.TryGetValue(cleaned, out var canonical) ? canonical : cleaned;
+    }
+
+    private static string Clean(string skill)
     {
         var normalized = Regex.Replace(skill.Trim().ToLowerInvariant(), @"\s+", " ");
-        // Trailing versions carry no matching signal: ".NET 8" -> ".net", "Vue 3" -> "vue".
-        normalized = Regex.Replace(normalized, @"\s+v?\d+(\.\d+)*(\.x)?\+?$", string.Empty);
-        return Aliases.TryGetValue(normalized, out var canonical) ? canonical : normalized;
+        // A trailing version carries no matching signal: "Excel 2019" -> "excel", ".NET 8" -> ".net".
+        return Regex.Replace(normalized, @"\s+v?\d+(\.\d+)*(\.x)?\+?$", string.Empty);
     }
 }
