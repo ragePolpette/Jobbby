@@ -135,6 +135,28 @@ public class MultiQueryFetcherTests
     }
 
     [Fact]
+    public async Task FetchAsync_PostingFromRemoteSweepOfOneQueryAndLocalOfAnother_IsKeptAsLocal()
+    {
+        // Regression: query 1's remote sweep ran before query 2's local sweep, so an in-area
+        // hybrid job was kept as Remote and then rejected as "fuori zona".
+        var inArea = Posting("Hybrid nurse, remote days", "https://x/1");
+        var jobSource = new MockJobSource(request => (request.Query, request.Sweep) switch
+        {
+            ("q1", SearchSweep.Remote) => new[] { inArea },
+            ("q2", SearchSweep.Local) => new[] { inArea },
+            _ => Array.Empty<RawPosting>(),
+        });
+        var area = new AreaSettings { Country = "de", Where = "Köln", AcceptsRemote = true };
+
+        var result = await Fetch(jobSource, new[] { "q1", "q2" }, area: area, filter: new RemoteKeywordFilter(new[] { "remote" }));
+
+        Assert.Equal(SearchSweep.Local, Assert.Single(result.Postings).Sweep);
+        Assert.Equal(
+            new[] { SearchSweep.Local, SearchSweep.Local, SearchSweep.Remote, SearchSweep.Remote },
+            jobSource.RequestsReceived.Select(r => r.Sweep));
+    }
+
+    [Fact]
     public async Task FetchAsync_RemoteSweep_SkippedWhenNoKeywordsOrNoWhereOrNotAccepted()
     {
         foreach (var (area, keywords) in new[]

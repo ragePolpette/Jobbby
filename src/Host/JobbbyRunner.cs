@@ -73,7 +73,10 @@ public sealed class JobbbyRunner
         var runAt = DateTimeOffset.UtcNow;
         Report("started", mode == RunMode.Dry ? "Dry run avviata" : "Run avviata");
 
-        var plan = await SearchQueryPlanner.PlanAsync(
+        SearchPlan plan;
+        try
+        {
+            plan = await SearchQueryPlanner.PlanAsync(
             new SearchSettings
             {
                 Queries = settings.Searches.Queries,
@@ -83,6 +86,13 @@ public sealed class JobbbyRunner
             cv,
             _deps.Llm,
             cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            Report("cancelled", "Run interrotta durante la preparazione delle ricerche.");
+            return new RunSummary(new RunStatsCollector().BuildReport(runAt), 0, warnings, Cancelled: true, dryRunLog);
+        }
+
         if (plan.DerivationError is not null)
             Warn($"Ricerche dal CV non ricavate, uso solo quelle configurate: {plan.DerivationError}");
         Report("queries", string.Join(", ", plan.Queries));

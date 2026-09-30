@@ -37,6 +37,21 @@ catch (DataDirLockedException ex)
 
 using (dataDirLock)
 {
+    try
+    {
+        return await RunCliAsync(configuration, dataDir);
+    }
+    catch (Exception ex) when (ex is SettingsFileException or SettingsValidationException or InvalidOperationException
+                                   or NotSupportedException or FileNotFoundException or System.Text.Json.JsonException)
+    {
+        // Configuration and environment problems: the message says what to fix, a stack trace would bury it.
+        Console.Error.WriteLine($"Errore: {ex.Message}");
+        return 2;
+    }
+}
+
+static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir)
+{
     var baseDirectory = AppContext.BaseDirectory;
     var legacyDirectories = new[] { configuration["Jobbby:LegacyDir"], baseDirectory }.OfType<string>();
     foreach (var note in LegacyMigration.Run(dataDir, legacyDirectories))

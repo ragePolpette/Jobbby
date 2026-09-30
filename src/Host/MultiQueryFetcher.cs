@@ -55,9 +55,11 @@ public static class MultiQueryFetcher
             ? new[] { SearchSweep.Local, SearchSweep.Remote }
             : new[] { SearchSweep.Local };
 
-        foreach (var query in queries)
+        // Every local sweep runs before any remote one, so a posting found by both is kept
+        // with the local (geo-filtered) provenance and judged by the in-area rules.
+        foreach (var sweep in sweeps)
         {
-            foreach (var sweep in sweeps)
+            foreach (var query in queries)
             {
                 var key = CursorKey(source, country, area, sweep, query);
                 cursors.TryGetValue(key, out var cursor);

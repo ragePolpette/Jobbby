@@ -60,10 +60,56 @@ public static class SettingsStore
             throw new SettingsFileException($"{settingsPath} non valido al campo '{ex.Path ?? "?"}': {ex.Message}", ex);
         }
 
+        // System.Text.Json assigns an explicit null even to non-nullable properties.
+        var nullFields = new List<string>();
+        CollectNullFields(loaded, prefix: "", nullFields);
+        if (nullFields.Count > 0)
+            throw new SettingsFileException($"{settingsPath} non valido: questi campi non possono essere null: {string.Join(", ", nullFields)}.");
+
         using var document = JsonDocument.Parse(json);
         var unknown = new List<string>();
         CollectUnknownFields(document.RootElement, typeof(JobbbySettings), prefix: "", unknown);
         return new SettingsLoadResult(loaded, Created: false, unknown.Select(field => $"Campo sconosciuto ignorato: {field}").ToList());
+    }
+
+    private static readonly NullabilityInfoContext Nullability = new();
+
+    private static void CollectNullFields(object settingsRecord, string prefix, List<string> nullFields)
+    {
+        foreach (var property in settingsRecord.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            var name = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name;
+            if (name is null)
+                continue;
+
+            var path = prefix.Length == 0 ? name : $"{prefix}.{name}";
+            var value = property.GetValue(settingsRecord);
+            if (value is null)
+            {
+                if (Nullability.Create(property).ReadState != NullabilityState.Nullable)
+                    nullFields.Add(path);
+                continue;
+            }
+
+            switch (value)
+            {
+                case IEnumerable<string?> items when value is not string:
+                    if (items.Any(item => item is null))
+                        nullFields.Add(path);
+                    break;
+                case IDictionary<string, List<string>> map:
+                    foreach (var (key, words) in map)
+                    {
+                        if (words is null || words.Any(word => word is null))
+                            nullFields.Add($"{path}.{key}");
+                    }
+                    break;
+                default:
+                    if (IsSettingsRecord(value.GetType()) && value is not string)
+                        CollectNullFields(value, path, nullFields);
+                    break;
+            }
+        }
     }
 
     public static void Save(string settingsPath, JobbbySettings settings) =>

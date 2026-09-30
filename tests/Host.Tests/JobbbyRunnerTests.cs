@@ -91,6 +91,40 @@ public class JobbbyRunnerTests
     }
 
     [Fact]
+    public async Task Run_CancelledDuringQueryPlanning_ReportsCancelled()
+    {
+        // Regression: deriving queries from the CV happens before the fetch loop and let
+        // OperationCanceledException escape RunAsync instead of returning a cancelled summary.
+        using var tmp = new TempDir();
+        using var cts = new CancellationTokenSource();
+        var source = new MockJobSource(_ => Array.Empty<RawPosting>());
+        var llm = new BlockingLlm(onCall: cts.Cancel);
+        var runner = new JobbbyRunner(new DataDir(tmp.Root), Deps(source, llm));
+        var settings = Settings() with { Searches = Settings().Searches with { DeriveFromCv = true } };
+
+        var summary = await runner.RunAsync(settings, Cv(), RunMode.Dry, new Progress<RunEvent>(), cts.Token);
+
+        Assert.True(summary.Cancelled);
+        Assert.Empty(source.RequestsReceived);
+    }
+
+    [Fact]
+    public async Task NormalRun_KeepsCursorsOfOtherSearches()
+    {
+        using var tmp = new TempDir();
+        var dataDir = new DataDir(tmp.Root);
+        File.WriteAllText(dataDir.CursorsPath, """[{"SourceName":"Adzuna|fr|||local|other","LastSeenIdentifier":"u","LastRunAt":"2026-09-01T00:00:00+00:00"}]""");
+        var llm = new PromptRoutedLlm(judgment: """{"category":"Strong","reasoning":"r","confidence":0.9}""");
+        var runner = new JobbbyRunner(dataDir, Deps(new MockJobSource(_ => new[] { Posting("Nurse", "https://x/1") }), llm, new Notifications.MockTelegramGateway()));
+
+        await runner.RunAsync(Settings(), Cv(), RunMode.Normal, new Progress<RunEvent>(), CancellationToken.None);
+
+        var cursors = File.ReadAllText(dataDir.CursorsPath);
+        Assert.Contains("Adzuna|fr|||local|other", cursors);
+        Assert.Contains("Adzuna|de|||local|nurse", cursors);
+    }
+
+    [Fact]
     public async Task NormalRun_WritesCursorsAtomicallyInDataDir()
     {
         using var tmp = new TempDir();
@@ -169,6 +203,16 @@ public class JobbbyRunnerTests
             }
 
             return judgment;
+        }
+    }
+
+    private sealed class BlockingLlm(Action onCall) : ILlmClient
+    {
+        public async Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default)
+        {
+            onCall();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return "";
         }
     }
 
