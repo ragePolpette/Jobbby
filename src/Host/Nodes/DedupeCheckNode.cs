@@ -26,7 +26,7 @@ public sealed class DedupeCheckNode : INode
         _statsCollector = statsCollector;
     }
 
-    public Task<NodeResult> ExecuteAsync(GraphState state)
+    public Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default)
     {
         var jobPosting = state.Get<JobPosting>(NormalizeJobPostingNode.JobPostingStateKey);
         var company = jobPosting?.Company ?? string.Empty;

@@ -52,7 +52,7 @@ public sealed class ApplicationLedger
         lock (_lock)
         {
             _records.Add(record);
-            File.WriteAllText(_filePath, JsonSerializer.Serialize(_records, SerializerOptions));
+            Config.AtomicFile.WriteAllText(_filePath, JsonSerializer.Serialize(_records, SerializerOptions));
         }
     }
 }

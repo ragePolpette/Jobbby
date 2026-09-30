@@ -59,9 +59,9 @@ public class AdzunaJobSourceTests
             Content = new StringContent(response, Encoding.UTF8, "application/json"),
         });
         using var httpClient = new HttpClient(handler);
-        var jobSource = new AdzunaJobSource(httpClient, "id", "key");
+        var jobSource = new AdzunaJobSource(httpClient, "id", "key", "it");
 
-        var postings = await jobSource.FetchAsync(new SourceDefinition { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" }, "backend");
+        var postings = await jobSource.FetchAsync(new SourceDefinition { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" }, Local("backend"));
 
         Assert.Equal("Milano, Lombardia", postings[0].Location);
         Assert.Equal(55000m, postings[0].SalaryMaximum);
@@ -79,7 +79,7 @@ public class AdzunaJobSourceTests
         });
 
         using var httpClient = new HttpClient(handler);
-        var jobSource = new AdzunaJobSource(httpClient, "test-id", "test-key");
+        var jobSource = new AdzunaJobSource(httpClient, "test-id", "test-key", "it");
         var source = new SourceDefinition
         {
             Name = "Adzuna",
@@ -89,7 +89,7 @@ public class AdzunaJobSourceTests
             AuthSecretKey = "Adzuna:AppKey",
         };
 
-        var postings = await jobSource.FetchAsync(source, "sviluppatore backend");
+        var postings = await jobSource.FetchAsync(source, Local("sviluppatore backend"));
 
         Assert.Equal(2, postings.Count);
 
@@ -121,7 +121,7 @@ public class AdzunaJobSourceTests
         });
 
         using var httpClient = new HttpClient(handler);
-        var jobSource = new AdzunaJobSource(httpClient, "my-app-id", "my-app-key");
+        var jobSource = new AdzunaJobSource(httpClient, "my-app-id", "my-app-key", "it");
         var source = new SourceDefinition
         {
             Name = "Adzuna",
@@ -131,7 +131,7 @@ public class AdzunaJobSourceTests
             AuthSecretKey = "Adzuna:AppKey",
         };
 
-        await jobSource.FetchAsync(source, "sviluppatore backend");
+        await jobSource.FetchAsync(source, Local("sviluppatore backend"));
 
         Assert.NotNull(capturedRequest);
         var query = capturedRequest!.RequestUri!.Query;
@@ -158,10 +158,10 @@ public class AdzunaJobSourceTests
         });
 
         using var httpClient = new HttpClient(handler);
-        var jobSource = new AdzunaJobSource(httpClient, "id", "key", resultsPerPage: 3);
+        var jobSource = new AdzunaJobSource(httpClient, "id", "key", "it", resultsPerPage: 3);
         var source = new SourceDefinition { Name = "x", BaseUrl = "https://api.adzuna.com", Type = "api", RequiresAuth = false, AuthSecretKey = null };
 
-        await jobSource.FetchAsync(source, "sviluppatore backend");
+        await jobSource.FetchAsync(source, Local("sviluppatore backend"));
 
         Assert.Contains("results_per_page=3", capturedRequest!.RequestUri!.Query);
     }
@@ -175,11 +175,99 @@ public class AdzunaJobSourceTests
         });
 
         using var httpClient = new HttpClient(handler);
-        var jobSource = new AdzunaJobSource(httpClient, "id", "key");
+        var jobSource = new AdzunaJobSource(httpClient, "id", "key", "it");
         var source = new SourceDefinition { Name = "x", BaseUrl = "https://api.adzuna.com", Type = "api", RequiresAuth = false, AuthSecretKey = null };
 
-        var postings = await jobSource.FetchAsync(source, "sviluppatore backend");
+        var postings = await jobSource.FetchAsync(source, Local("sviluppatore backend"));
 
         Assert.Empty(postings);
+    }
+
+    [Fact]
+    public async Task FetchAsync_UsesCountryWhereAndDistance_WithoutSalaryParameters()
+    {
+        Uri? uri = null;
+        var jobSource = SourceReturning("""{"results":[]}""", r => uri = r.RequestUri, country: "de");
+
+        await jobSource.FetchAsync(Source, new JobSearchRequest("Pflegefachkraft", "Köln", 25, SearchSweep.Local));
+
+        Assert.StartsWith("https://api.adzuna.com/v1/api/jobs/de/search/1", uri!.ToString());
+        Assert.Contains("where=K%C3%B6ln", uri.Query);
+        Assert.Contains("distance=25", uri.Query);
+        Assert.DoesNotContain("salary", uri.Query);
+    }
+
+    [Fact]
+    public async Task FetchAsync_WhereWithApostropheAndSpaces_IsEncoded_AndNoDistanceWithoutOne()
+    {
+        Uri? uri = null;
+        var jobSource = SourceReturning("""{"results":[]}""", r => uri = r.RequestUri);
+
+        await jobSource.FetchAsync(Source, new JobSearchRequest("q", "Reggio nell'Emilia", null, SearchSweep.Local));
+
+        Assert.Contains("where=Reggio%20nell%27Emilia", uri!.OriginalString);
+        Assert.DoesNotContain("distance", uri.Query);
+    }
+
+    [Fact]
+    public async Task FetchAsync_BlankWhere_SearchesWholeCountry()
+    {
+        Uri? uri = null;
+        var jobSource = SourceReturning("""{"results":[]}""", r => uri = r.RequestUri);
+
+        await jobSource.FetchAsync(Source, new JobSearchRequest("q", "  ", 30, SearchSweep.Local));
+
+        Assert.DoesNotContain("where", uri!.Query);
+        Assert.DoesNotContain("distance", uri.Query);
+    }
+
+    [Fact]
+    public async Task FetchAsync_RemoteSweep_OmitsWhere_AndMarksPostings()
+    {
+        Uri? uri = null;
+        var jobSource = SourceReturning("""{"results":[{"title":"t","redirect_url":"https://x/1"}]}""", r => uri = r.RequestUri);
+
+        var postings = await jobSource.FetchAsync(Source, new JobSearchRequest("q", null, null, SearchSweep.Remote));
+
+        Assert.DoesNotContain("where", uri!.Query);
+        Assert.Equal(SearchSweep.Remote, postings[0].Sweep);
+    }
+
+    [Fact]
+    public async Task FetchAsync_SalaryBelowConfiguredPlausibility_IsUnknown()
+    {
+        var jobSource = SourceReturning(
+            """{"results":[{"title":"t","redirect_url":"https://x/1","salary_max":900,"salary_is_predicted":"0"},{"title":"u","redirect_url":"https://x/2","salary_max":1200,"salary_is_predicted":"0"}]}""",
+            _ => { }, minimumPlausibleSalary: 1000m);
+
+        var postings = await jobSource.FetchAsync(Source, Local("q"));
+
+        Assert.Null(postings[0].SalaryMaximum);
+        Assert.Equal(1200m, postings[1].SalaryMaximum);
+    }
+
+    [Theory]
+    [InlineData("IT")]
+    [InlineData("it/../x")]
+    [InlineData("")]
+    public void Constructor_RejectsMalformedCountry(string country)
+    {
+        using var httpClient = new HttpClient();
+
+        Assert.Throws<ArgumentException>(() => new AdzunaJobSource(httpClient, "id", "key", country));
+    }
+
+    private static readonly SourceDefinition Source = new() { Name = "Adzuna", BaseUrl = "https://api.adzuna.com", Type = "api" };
+
+    private static JobSearchRequest Local(string query) => new(query, null, null, SearchSweep.Local);
+
+    private static AdzunaJobSource SourceReturning(string json, Action<HttpRequestMessage> onRequest, string country = "it", decimal minimumPlausibleSalary = 5000m)
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            onRequest(request);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+        });
+        return new AdzunaJobSource(new HttpClient(handler), "id", "key", country, minimumPlausibleSalary: minimumPlausibleSalary);
     }
 }

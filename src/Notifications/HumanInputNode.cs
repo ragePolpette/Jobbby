@@ -43,12 +43,12 @@ public sealed class HumanInputNode : INode
         _timeout = timeout ?? DefaultTimeout;
     }
 
-    public async Task<NodeResult> ExecuteAsync(GraphState state)
+    public async Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default)
     {
         var message = state.Get<string>(_promptStateKey) ?? string.Empty;
 
-        var messageId = await _gateway.SendAsync(message).ConfigureAwait(false);
-        var reply = await _registry.WaitForReplyAsync(messageId, _timeout).ConfigureAwait(false);
+        var messageId = await _gateway.SendAsync(message, cancellationToken).ConfigureAwait(false);
+        var reply = await _registry.WaitForReplyAsync(messageId, _timeout).WaitAsync(cancellationToken).ConfigureAwait(false);
 
         if (reply == PendingApprovalRegistry.TimeoutSentinel)
         {

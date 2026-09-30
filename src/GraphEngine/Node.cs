@@ -6,5 +6,5 @@ namespace GraphEngine;
 /// </summary>
 public interface INode
 {
-    Task<NodeResult> ExecuteAsync(GraphState state);
+    Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default);
 }

@@ -73,7 +73,7 @@ public sealed class GraphRun
                 throw new InvalidOperationException($"No edge registered for node '{current}'.");
 
             var before = state.Snapshot();
-            var result = await node.ExecuteAsync(state).ConfigureAwait(false);
+            var result = await node.ExecuteAsync(state, cancellationToken).ConfigureAwait(false);
             state.ApplyUpdates(result.Updates);
             var after = state.Snapshot();
 

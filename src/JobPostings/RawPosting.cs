@@ -17,4 +17,5 @@ public sealed record RawPosting(
     string Company = "",
     DateTimeOffset? PostedAt = null,
     string? Location = null,
-    decimal? SalaryMaximum = null);
+    decimal? SalaryMaximum = null,
+    SearchSweep Sweep = SearchSweep.Local);

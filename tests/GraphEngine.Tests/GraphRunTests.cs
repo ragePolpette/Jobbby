@@ -101,7 +101,7 @@ public class GraphRunTests
     /// iteration so external Steer() calls have time to land while it spins.</summary>
     private sealed class WaitForOwnerNode : INode
     {
-        public async Task<NodeResult> ExecuteAsync(GraphState state)
+        public async Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default)
         {
             await Task.Delay(10);
             state.TryGet<string>("owner", out var owner);

@@ -16,6 +16,23 @@ public static class LlmClientFactory
     public const string ClaudeCliProvider = "claude-cli";
     public const string DefaultClaudeModel = "sonnet";
 
+    /// <summary>
+    /// Provider and model from <c>settings.json</c>; endpoint, API key and CLI options stay in
+    /// configuration (user-secrets / environment), which is where secrets belong.
+    /// </summary>
+    public static LlmSelection Create(Config.LlmSettings llm, IConfiguration configuration, HttpClient httpClient, ICliProcessRunner? runner = null)
+    {
+        var overlay = new ConfigurationBuilder()
+            .AddConfiguration(configuration)
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Llm:Provider"] = llm.Provider,
+                ["Llm:Model"] = llm.Model,
+            })
+            .Build();
+        return Create(overlay, httpClient, runner);
+    }
+
     public static LlmSelection Create(IConfiguration configuration, HttpClient httpClient, ICliProcessRunner? runner = null)
     {
         var provider = (configuration["Llm:Provider"] ?? OpenAiProvider).Trim().ToLowerInvariant();
