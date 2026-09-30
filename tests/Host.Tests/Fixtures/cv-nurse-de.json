@@ -1,0 +1,16 @@
+{
+  "name": "Anna Schmidt",
+  "yearsExperience": 8,
+  "seniority": "Fachkraft",
+  "location": "Köln",
+  "roles": [
+    {
+      "title": "Gesundheits- und Krankenpflegerin",
+      "company": "Universitätsklinikum Köln",
+      "skills": ["Intensivpflege", "Wundversorgung", "Triage"],
+      "highlights": ["Praxisanleiterin für Auszubildende"]
+    }
+  ],
+  "skills": ["Intensivpflege", "Wundversorgung", "Triage", "Medikamentenmanagement"],
+  "languages": ["Deutsch", "Englisch"]
+}
