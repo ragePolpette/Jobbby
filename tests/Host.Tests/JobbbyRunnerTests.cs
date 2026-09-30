@@ -22,7 +22,7 @@ public class JobbbyRunnerTests
         Assert.False(summary.Cancelled);
         Assert.Equal(1, summary.Report.TotalFetched);
         Assert.Equal(1, summary.AdzunaCalls);
-        Assert.NotNull(summary.DryRunLog);
+        Assert.True(File.Exists(summary.RunPath));
         Assert.False(File.Exists(dataDir.ApplicationsPath));
         Assert.False(File.Exists(dataDir.CursorsPath));
     }

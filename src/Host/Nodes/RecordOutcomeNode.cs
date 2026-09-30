@@ -17,6 +17,8 @@ public sealed class RecordOutcomeNode : INode
 {
     public const string OutcomeStateKey = "Outcome";
     public const string ReasonStateKey = "OutcomeReason";
+    /// <summary>The full <see cref="ApplicationRecord"/>, also in dry runs where the ledger is not written.</summary>
+    public const string RecordStateKey = "OutcomeRecord";
     public const string InsufficientInformationReason = "informazioni insufficienti nell'estratto: incolla il testo completo dell'annuncio per valutarlo";
 
     private readonly ApplicationLedger.ApplicationLedger _ledger;
@@ -42,13 +44,15 @@ public sealed class RecordOutcomeNode : INode
             case ApplicationOutcomes.Shortlisted: _statsCollector.IncrementAutoApproved(); break;
         }
 
+        var record = PostingRecordFactory.Create(state, outcome, reason);
         if (!_dryRun)
-            _ledger.RecordOutcome(PostingRecordFactory.Create(state, outcome, reason));
+            _ledger.RecordOutcome(record);
 
         return Task.FromResult(NodeResult.From(new Dictionary<string, object>
         {
             [OutcomeStateKey] = outcome,
             [ReasonStateKey] = reason,
+            [RecordStateKey] = record,
         }));
     }
 

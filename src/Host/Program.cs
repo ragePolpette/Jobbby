@@ -57,6 +57,13 @@ static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir
     foreach (var note in LegacyMigration.Run(dataDir, legacyDirectories))
         Console.WriteLine(note);
 
+    var runs = new RunStore(dataDir);
+    foreach (var runId in runs.RecoverInterrupted())
+        Console.WriteLine($"Run {runId} era rimasta in corso: segnata come interrotta.");
+    var imported = runs.ImportLegacyReports();
+    if (imported > 0)
+        Console.WriteLine($"Importati {imported} riepiloghi da run-reports.json in {dataDir.RunsDirectory}.");
+
     // Only an explicitly configured searches.json seeds a new settings.json: the repository ships none.
     var settingsResult = SettingsStore.LoadOrCreate(dataDir.SettingsPath, configuration["Jobbby:SearchesConfig"]);
     if (settingsResult.Created)
@@ -113,13 +120,7 @@ static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir
     var summary = await runner.RunAsync(settings, cvResult.Cv, mode, progress, cancellation.Token);
     Console.WriteLine($"Chiamate Adzuna: {summary.AdzunaCalls}");
 
-    if (summary.DryRunLog is not null)
-    {
-        var logPath = configuration["Jobbby:DryRunLogPath"]
-            ?? Path.Combine(dataDir.RunsDirectory, $"dry-run-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.json");
-        summary.DryRunLog.Save(logPath);
-        Console.WriteLine($"Log della dry run: {logPath}");
-    }
+    Console.WriteLine($"Run salvata in {summary.RunPath}");
 
     return summary.Cancelled ? 130 : 0;
 }
