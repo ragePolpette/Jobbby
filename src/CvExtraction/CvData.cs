@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using YamlDotNet.Serialization;
 
 namespace CvExtraction;
 
@@ -15,8 +16,22 @@ public sealed record CvRole
     [JsonPropertyName("company")]
     public string Company { get; init; } = string.Empty;
 
+    [JsonPropertyName("skills")]
+    public List<string> Skills { get; init; } = new();
+
+    /// <summary>Older CVs named a role's skills "stack": read it, never write it.</summary>
     [JsonPropertyName("stack")]
-    public List<string> Stack { get; init; } = new();
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [YamlMember(Alias = "stack")]
+    public List<string>? LegacyStack
+    {
+        get => null;
+        init
+        {
+            if (value is { Count: > 0 })
+                Skills = Skills.Concat(value).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+    }
 
     [JsonPropertyName("highlights")]
     public List<string> Highlights { get; init; } = new();

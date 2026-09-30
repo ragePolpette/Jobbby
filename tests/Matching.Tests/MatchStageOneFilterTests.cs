@@ -11,8 +11,8 @@ public class MatchStageOneFilterTests
 
     private static readonly StageOneCriteria MilanoGeo = new("Milano", GeoFilteredBySource: true, AcceptsRemote: true, MinimumYearlySalary: 33000);
 
-    private static JobPosting NewPosting(IEnumerable<string> requiredStack, string seniorityLevel = "") =>
-        new("Backend Engineer", "Acme", seniorityLevel, requiredStack.ToList(), "desc",
+    private static JobPosting NewPosting(IEnumerable<string> requiredSkills, string seniorityLevel = "") =>
+        new("Backend Engineer", "Acme", seniorityLevel, requiredSkills.ToList(), "desc",
             "https://x.example", "https://x.example/apply", ApplyChannels.ExternalPlatform);
 
     private static CvData NewCv(double yearsExperience, IEnumerable<string>? skills = null, IEnumerable<CvRole>? roles = null) => new()
@@ -45,7 +45,7 @@ public class MatchStageOneFilterTests
     {
         var cv = NewCv(4, skills: new[] { "C#" }, roles: new[]
         {
-            new CvRole { Title = "Backend Engineer", Company = "Prev Co", Stack = new List<string> { "Kubernetes" }, Highlights = new List<string>() },
+            new CvRole { Title = "Backend Engineer", Company = "Prev Co", Skills = new List<string> { "Kubernetes" }, Highlights = new List<string>() },
         });
 
         Assert.True(MatchStageOneFilter.Evaluate(NewPosting(new[] { "Kubernetes" }), cv, Anything).Passes);
@@ -71,7 +71,7 @@ public class MatchStageOneFilterTests
     }
 
     [Fact]
-    public void Evaluate_EmptyRequiredStack_StackCheckPasses()
+    public void Evaluate_EmptyRequiredSkills_StackCheckPasses()
     {
         Assert.True(MatchStageOneFilter.Evaluate(NewPosting(Array.Empty<string>()), NewCv(4, skills: new[] { "C#" }), Anything).Passes);
     }
@@ -79,7 +79,7 @@ public class MatchStageOneFilterTests
     [Fact]
     public void Evaluate_MissingMustHaveSkill_FailsAndExplainsRequirement()
     {
-        var posting = NewPosting(new[] { "C#" }) with { MustHaveStack = new List<string> { "Kubernetes" } };
+        var posting = NewPosting(new[] { "C#" }) with { MustHaveSkills = new List<string> { "Kubernetes" } };
 
         var result = MatchStageOneFilter.Evaluate(posting, NewCv(4, skills: new[] { "C#" }), Anything);
 
@@ -90,7 +90,7 @@ public class MatchStageOneFilterTests
     [Fact]
     public void Evaluate_MissingPreferredSkill_PassesWithWarning()
     {
-        var posting = NewPosting(new[] { "C#" }) with { PreferredStack = new List<string> { "Azure" } };
+        var posting = NewPosting(new[] { "C#" }) with { PreferredSkills = new List<string> { "Azure" } };
 
         var result = MatchStageOneFilter.Evaluate(posting, NewCv(4, skills: new[] { "C#" }), Anything);
 

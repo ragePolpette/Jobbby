@@ -65,7 +65,7 @@ public static class SearchQueryPlanner
     {
         var roles = cv.Roles.Count == 0
             ? "(nessuno)"
-            : string.Join("\n", cv.Roles.Select(role => $"- {role.Title} presso {role.Company} ({string.Join(", ", role.Stack)})"));
+            : string.Join("\n", cv.Roles.Select(role => $"- {role.Title} presso {role.Company} ({string.Join(", ", role.Skills)})"));
         var alreadyConfigured = configured.Count == 0 ? "(nessuna)" : string.Join(", ", configured);
 
         return $$"""

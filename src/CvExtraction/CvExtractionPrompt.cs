@@ -12,7 +12,7 @@ public static class CvExtractionPrompt
           "yearsExperience": number,
           "seniority": string,
           "roles": [
-            { "title": string, "company": string, "stack": [string], "highlights": [string] }
+            { "title": string, "company": string, "skills": [string], "highlights": [string] }
           ],
           "skills": [string],
           "languages": [string]

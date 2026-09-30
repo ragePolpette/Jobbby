@@ -37,7 +37,7 @@ public class HostGraphTests
     /// skip NormalizeJobPosting: includes both the JobPosting object (read by
     /// DedupeCheckNode and ScoreMatchNode) and the flat Company/Title/SourceUrl keys
     /// (read by AskApproval/RecordIfApproved), exactly as NormalizeJobPostingNode would
-    /// have left them. RequiredStack/SeniorityLevel match DefaultCandidateCv.
+    /// have left them. RequiredSkills/SeniorityLevel match DefaultCandidateCv.
     /// </summary>
     private static GraphState NewApplicationState(string company = "Acme", string title = "Backend Engineer")
     {
@@ -373,7 +373,7 @@ public class HostGraphTests
 
             // First CompleteAsync call is NormalizeJobPosting's extraction, second is
             // ScoreMatch's stage-two judge - in that order.
-            const string extractionJson = """{"company":"Acme Corp","seniorityLevel":"Mid","requiredStack":["C#",".NET"]}""";
+            const string extractionJson = """{"company":"Acme Corp","seniorityLevel":"Mid","requiredSkills":["C#",".NET"]}""";
             const string judgmentJson = """{"category":"Strong","reasoning":"Great overlap","confidence":0.95}""";
             var llmClient = new MockLlmClient(new[] { extractionJson, judgmentJson });
 

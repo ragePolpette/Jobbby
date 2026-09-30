@@ -6,7 +6,7 @@ using JobPostings;
 namespace Host.Nodes;
 
 /// <summary>
-/// Turns a RawPosting into a normalized JobPosting. SeniorityLevel and RequiredStack
+/// Turns a RawPosting into a normalized JobPosting. SeniorityLevel and RequiredSkills
 /// always come from the LLM reading the raw title/description. Company comes from
 /// RawPosting.Company directly when the source provided one; only when that's empty does
 /// the LLM get asked for it too, as a fallback for sources that don't expose it
@@ -47,7 +47,7 @@ public sealed class NormalizeJobPostingNode : INode
             Title: rawPosting.RawTitle,
             Company: company,
             SeniorityLevel: extraction.SeniorityLevel,
-            RequiredStack: extraction.RequiredStack,
+            RequiredSkills: extraction.RequiredSkills,
             Description: rawPosting.RawDescription,
             SourceUrl: sourceUrl,
             ApplyUrl: rawPosting.ApplyUrl,
@@ -98,7 +98,7 @@ public sealed class NormalizeJobPostingNode : INode
               {
                 "company": string,
                 "seniorityLevel": string,
-                "requiredStack": [string],
+                "requiredSkills": [string],
                 "workMode": "onsite" | "hybrid" | "remote" | "unknown",
                 "minYearsExperience": number | null
               }
@@ -106,7 +106,7 @@ public sealed class NormalizeJobPostingNode : INode
             : """
               {
                 "seniorityLevel": string,
-                "requiredStack": [string],
+                "requiredSkills": [string],
                 "workMode": "onsite" | "hybrid" | "remote" | "unknown",
                 "minYearsExperience": number | null
               }
@@ -138,8 +138,20 @@ public sealed class NormalizeJobPostingNode : INode
         [JsonPropertyName("seniorityLevel")]
         public string SeniorityLevel { get; init; } = string.Empty;
 
+        [JsonPropertyName("requiredSkills")]
+        public List<string> RequiredSkills { get; init; } = new();
+
         [JsonPropertyName("requiredStack")]
-        public List<string> RequiredStack { get; init; } = new();
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<string>? LegacyRequiredStack
+        {
+            get => null;
+            init
+            {
+                if (value is { Count: > 0 })
+                    RequiredSkills = RequiredSkills.Concat(value).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            }
+        }
 
         [JsonPropertyName("workMode")]
         public string? WorkMode { get; init; }

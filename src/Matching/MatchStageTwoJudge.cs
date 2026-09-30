@@ -39,7 +39,7 @@ public sealed class MatchStageTwoJudge
 
     private static string BuildPrompt(JobPosting posting, CvData cv)
     {
-        var requiredStack = string.Join(", ", posting.RequiredStack);
+        var requiredSkills = string.Join(", ", posting.RequiredSkills);
         var candidateSkills = string.Join(", ", cv.Skills);
 
         return $$"""
@@ -49,7 +49,7 @@ public sealed class MatchStageTwoJudge
             Titolo: {{posting.Title}}
             Azienda: {{posting.Company}}
             Seniority richiesta: {{posting.SeniorityLevel}}
-            Stack richiesto: {{requiredStack}}
+            Competenze richieste: {{requiredSkills}}
             Descrizione: {{posting.Description}}
 
             Candidato:

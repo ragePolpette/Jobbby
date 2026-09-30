@@ -224,7 +224,7 @@ public sealed class JobbbyRunner
                 rawPosting.Company,
                 rawPosting.ApplyUrl,
                 Sweep = rawPosting.Sweep.ToString(),
-                Normalized = posting is null ? null : new { posting.Title, posting.Company, posting.SeniorityLevel, posting.RequiredStack, posting.Location, WorkMode = posting.WorkMode.ToString(), posting.MinYearsExperience, posting.SalaryMaximum },
+                Normalized = posting is null ? null : new { posting.Title, posting.Company, posting.SeniorityLevel, posting.RequiredSkills, posting.Location, WorkMode = posting.WorkMode.ToString(), posting.MinYearsExperience, posting.SalaryMaximum },
                 StageOnePassed = state.Get<bool>(ScoreMatchNode.StageOnePassedStateKey),
                 StageOneReason = state.Get<string>(ScoreMatchNode.StageOneReasonStateKey),
                 MissingRequirements = state.Get<List<string>>(ScoreMatchNode.MissingRequirementsStateKey),

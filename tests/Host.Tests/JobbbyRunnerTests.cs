@@ -199,7 +199,7 @@ public class JobbbyRunnerTests
                 onExtraction?.Invoke();
                 if (blockAfterCallback)
                     await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-                return """{"seniorityLevel":"","requiredStack":["Triage"],"workMode":"onsite"}""";
+                return """{"seniorityLevel":"","requiredSkills":["Triage"],"workMode":"onsite"}""";
             }
 
             return judgment;
