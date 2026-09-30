@@ -13,4 +13,15 @@ public static class PromptText
         var clean = text.Replace('<', '‹').Replace('>', '›');
         return $"<{tag}>\n{clean}\n</{tag}>";
     }
+
+    /// <summary>An LLM answer without the ```json … ``` fence some models wrap around JSON.</summary>
+    public static string StripCodeFences(string response)
+    {
+        var text = response.Trim();
+        if (!text.StartsWith("```", StringComparison.Ordinal))
+            return text;
+        var firstLine = text.IndexOf('\n');
+        var end = text.LastIndexOf("```", StringComparison.Ordinal);
+        return firstLine < 0 || end <= firstLine ? text : text[(firstLine + 1)..end].Trim();
+    }
 }

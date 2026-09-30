@@ -147,7 +147,7 @@ public sealed class CvStore(DataDir dataDir)
         CvData? cv;
         try
         {
-            cv = JsonSerializer.Deserialize<CvData>(StripFences(response), ReadOptions);
+            cv = JsonSerializer.Deserialize<CvData>(PromptText.StripCodeFences(response), ReadOptions);
         }
         catch (JsonException ex)
         {
@@ -190,15 +190,5 @@ public sealed class CvStore(DataDir dataDir)
         if (errors.Count > 0)
             throw new CvFileException("CV non valido: " + string.Join("; ", errors.Select(e => e.Message)));
         return (normalized, notes);
-    }
-
-    private static string StripFences(string response)
-    {
-        var text = response.Trim();
-        if (!text.StartsWith("```", StringComparison.Ordinal))
-            return text;
-        var firstLine = text.IndexOf('\n');
-        var end = text.LastIndexOf("```", StringComparison.Ordinal);
-        return firstLine < 0 || end <= firstLine ? text : text[(firstLine + 1)..end].Trim();
     }
 }
