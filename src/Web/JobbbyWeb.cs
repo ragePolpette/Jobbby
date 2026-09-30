@@ -68,7 +68,8 @@ public static class JobbbyWeb
         });
         app.UseRequestGuard();
         app.UseDefaultFiles();
-        app.UseStaticFiles();
+        // no-cache = revalidate every time: after an update the browser gets the new script, not a stale one.
+        app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-cache" });
         app.MapSettingsApi();
         app.MapRunsApi();
         app.MapPostingsApi();

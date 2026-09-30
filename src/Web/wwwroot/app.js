@@ -626,11 +626,13 @@ function derivedQueriesSection() {
     clear(result).append(el("p", { class: "hint", role: "status", text: "Chiedo all'LLM…" }));
     try {
       const data = await api("POST", "/api/cv/derived-queries", {});
-      clear(result).append(
+      // Through el(), which skips the missing parts: Node.append(null) would write "null".
+      const preview = el("div", {},
         data.enabled ? null : el("p", { class: "hint", text: "Le ricerche dal CV sono spente nelle Impostazioni: le run usano solo quelle configurate." }),
         data.error ? el("p", { class: "notice error", text: data.error }) : null,
         list("Configurate nelle Impostazioni", data.configured),
         data.enabled ? list("Ricavate dal CV", data.derived) : null);
+      clear(result).append(preview);
     } catch (error) {
       clear(result);
       notice(result, error.message, "error");
