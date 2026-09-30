@@ -19,11 +19,13 @@ public sealed class DedupeCheckNode : INode
 
     private readonly ApplicationLedger.ApplicationLedger _ledger;
     private readonly RunStatsCollector _statsCollector;
+    private readonly IReadOnlyList<string>? _extraCompanySuffixes;
 
-    public DedupeCheckNode(ApplicationLedger.ApplicationLedger ledger, RunStatsCollector statsCollector)
+    public DedupeCheckNode(ApplicationLedger.ApplicationLedger ledger, RunStatsCollector statsCollector, IEnumerable<string>? extraCompanySuffixes = null)
     {
         _ledger = ledger;
         _statsCollector = statsCollector;
+        _extraCompanySuffixes = extraCompanySuffixes?.ToList();
     }
 
     public Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default)
@@ -31,7 +33,7 @@ public sealed class DedupeCheckNode : INode
         var jobPosting = state.Get<JobPosting>(NormalizeJobPostingNode.JobPostingStateKey);
         var company = jobPosting?.Company ?? string.Empty;
         var title = jobPosting?.Title ?? string.Empty;
-        var dedupeKey = DedupeKey.Normalize(company, title);
+        var dedupeKey = PostingIdentity.Key(company, title, _extraCompanySuffixes, jobPosting?.ApplyUrl);
 
         var alreadyProcessed = _ledger.HasBeenProcessed(dedupeKey);
 

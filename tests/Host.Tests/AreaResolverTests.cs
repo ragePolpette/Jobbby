@@ -48,7 +48,7 @@ public class AreaResolverTests
         using var tmp = new TempDir();
         var source = new MockJobSource(_ => Array.Empty<RawPosting>());
         var runner = new JobbbyRunner(new DataDir(tmp.Root),
-            new RunDependencies(source, new MockLlmNoop(), null, new[] { new SourceDefinition { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" } }));
+            new RunDependencies(source, new MockLlmNoop(), new[] { new SourceDefinition { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" } }));
         var d = JobbbySettings.Default;
         var settings = d with { Area = d.Area with { Country = "it" }, Searches = d.Searches with { Queries = new() { "q" }, DeriveFromCv = false } };
 
@@ -99,7 +99,7 @@ public class AreaResolverTests
         using var tmp = new TempDir();
         var source = new MockJobSource(_ => Array.Empty<RawPosting>());
         var runner = new JobbbyRunner(new DataDir(tmp.Root),
-            new RunDependencies(source, new MockLlmNoop(), null, new[] { new SourceDefinition { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" } }));
+            new RunDependencies(source, new MockLlmNoop(), new[] { new SourceDefinition { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" } }));
         var d = JobbbySettings.Default;
         var settings = d with
         {

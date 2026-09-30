@@ -16,4 +16,6 @@ public sealed record RunReport(
     int HumanApproved,
     int HumanRejected,
     int TimedOut,
-    Dictionary<string, int> ErrorsPerSource);
+    Dictionary<string, int> ErrorsPerSource,
+    int Pending = 0,
+    int AutoRejected = 0);

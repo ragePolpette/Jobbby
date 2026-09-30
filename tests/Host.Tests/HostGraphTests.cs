@@ -289,7 +289,7 @@ public class HostGraphTests
     }
 
     [Fact]
-    public async Task WeakJudgment_MapsToZeroConfidence_StillGoesThroughTelegramApproval()
+    public async Task WeakJudgment_NeverAutoApproves_StillGoesThroughTelegramApproval()
     {
         var gateway = new MockTelegramGateway();
         var registry = new PendingApprovalRegistry();
@@ -299,7 +299,7 @@ public class HostGraphTests
         try
         {
             var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
-            // High confidence in a Weak judgment must still map to 0, not to that confidence.
+            // High confidence in a Weak judgment must not auto-approve it.
             var llmClient = NewJudgmentLlmClient(MatchCategories.Weak, 0.95);
             var definition = HostGraph.Build(
                 gateway, registry, ledger, llmClient, DefaultCandidateCv, new RunStatsCollector(),
@@ -311,7 +311,7 @@ public class HostGraphTests
 
             await runTask;
 
-            Assert.Equal(0.0, state.Get<double>(ScoreMatchNode.MatchConfidenceStateKey));
+            Assert.Equal(0.95, state.Get<double>(ScoreMatchNode.MatchConfidenceStateKey));
             Assert.Contains("Acme", Assert.Single(gateway.SentMessages));
             Assert.False(state.Get<bool>(RecordIfApprovedNode.AutoApprovedStateKey));
             Assert.True(state.Get<bool>(RecordIfApprovedNode.RecordedStateKey));

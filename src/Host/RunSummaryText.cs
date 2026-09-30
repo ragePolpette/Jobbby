@@ -12,7 +12,19 @@ public static class RunSummaryText
     public static string DescribeOutcome(GraphState state)
     {
         if (state.Get<bool>(DedupeCheckNode.AlreadyAppliedStateKey))
-            return "scartato per dedupe";
+            return "già visto in una run precedente";
+        if (state.TryGet<string>(RecordOutcomeNode.OutcomeStateKey, out var outcome))
+        {
+            var reason = state.Get<string>(RecordOutcomeNode.ReasonStateKey);
+            return outcome switch
+            {
+                ApplicationLedger.ApplicationOutcomes.AutoRejected => $"scartato automaticamente ({reason})",
+                ApplicationLedger.ApplicationOutcomes.Pending => $"da decidere ({reason})",
+                ApplicationLedger.ApplicationOutcomes.Shortlisted => $"selezionato automaticamente ({reason})",
+                _ => outcome,
+            };
+        }
+
         if (!state.Get<bool>(ScoreMatchNode.StageOnePassedStateKey))
             return $"scartato dal filtro stage 1 ({state.Get<string>(ScoreMatchNode.StageOneReasonStateKey)})";
         if (!state.ContainsKey(RecordIfApprovedNode.OutcomeStateKey))
@@ -36,13 +48,12 @@ public static class RunSummaryText
         return $"""
             Riepilogo run {report.RunAt:yyyy-MM-dd HH:mm} UTC
             Annunci trovati: {report.TotalFetched}
-            Scartati per dedupe: {report.SkippedDuplicate}
+            Già visti: {report.SkippedDuplicate}
             Scartati al filtro stage 1: {report.RejectedStageOne}
             Valutazioni stage 2: {stageTwo}
             Selezionati automaticamente: {report.AutoApproved}
-            Approvati da un umano: {report.HumanApproved}
-            Rifiutati da un umano: {report.HumanRejected}
-            Scaduti senza risposta: {report.TimedOut}
+            Da decidere: {report.Pending}
+            Scartati automaticamente: {report.AutoRejected}
             Errori per fonte: {errors}
             """;
     }

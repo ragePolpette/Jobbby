@@ -70,6 +70,32 @@ public class MultiQueryFetcherTests
     }
 
     [Fact]
+    public async Task FetchAsync_EmptyCompany_DeduplicatesOnlyByUrl()
+    {
+        var jobSource = new MockJobSource(_ => new[]
+        {
+            Posting("Contabile", "https://x/1", ""),
+            Posting("Contabile", "https://x/2", ""),
+            Posting("Contabile", "https://x/2", ""),
+        });
+
+        var result = await Fetch(jobSource, new[] { "q" });
+
+        Assert.Equal(new[] { "https://x/1", "https://x/2" }, result.Postings.Select(p => p.ApplyUrl));
+    }
+
+    [Fact]
+    public async Task FetchAsync_ExtraCompanySuffixesFromSettings_AreApplied()
+    {
+        var jobSource = new MockJobSource(_ => new[] { Posting("Contabile", "https://x/1", "Acme Holding"), Posting("Contabile", "https://x/2", "Acme") });
+
+        var result = await MultiQueryFetcher.FetchAsync(jobSource, Adzuna, new[] { "q" }, "it", NoArea, NoKeywords,
+            new Dictionary<string, SourceCursor>(), null, RunAt, extraCompanySuffixes: new[] { "holding" });
+
+        Assert.Single(result.Postings);
+    }
+
+    [Fact]
     public async Task FetchAsync_UsesAndProducesOneCursorPerQuery()
     {
         var previousKey = MultiQueryFetcher.CursorKey(Adzuna, "it", NoArea, SearchSweep.Local, "AI engineer");

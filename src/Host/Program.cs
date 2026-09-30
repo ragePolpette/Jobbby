@@ -39,7 +39,7 @@ using (dataDirLock)
 {
     try
     {
-        return await RunCliAsync(configuration, dataDir);
+        return await RunCliAsync(configuration, dataDir, args);
     }
     catch (Exception ex) when (ex is SettingsFileException or SettingsValidationException or InvalidOperationException
                                    or NotSupportedException or FileNotFoundException or System.Text.Json.JsonException)
@@ -50,12 +50,21 @@ using (dataDirLock)
     }
 }
 
-static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir)
+static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir, string[] args)
 {
     var baseDirectory = AppContext.BaseDirectory;
     var legacyDirectories = new[] { configuration["Jobbby:LegacyDir"], baseDirectory }.OfType<string>();
     foreach (var note in LegacyMigration.Run(dataDir, legacyDirectories))
         Console.WriteLine(note);
+
+    var runs = new RunStore(dataDir);
+    foreach (var runId in runs.RecoverInterrupted())
+        Console.WriteLine($"Run {runId} era rimasta in corso: segnata come interrotta.");
+    var imported = runs.ImportLegacyReports();
+    if (imported.Imported > 0)
+        Console.WriteLine($"Importati {imported.Imported} riepiloghi da run-reports.json in {dataDir.RunsDirectory}.");
+    if (imported.Warning is not null)
+        Console.Error.WriteLine(imported.Warning);
 
     // Only an explicitly configured searches.json seeds a new settings.json: the repository ships none.
     var settingsResult = SettingsStore.LoadOrCreate(dataDir.SettingsPath, configuration["Jobbby:SearchesConfig"]);
@@ -64,6 +73,21 @@ static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir
     foreach (var note in settingsResult.Notes)
         Console.WriteLine(note);
     var settings = settingsResult.Settings;
+
+    // Decision commands: no run, no LLM, no Adzuna.
+    switch (args.FirstOrDefault()?.ToLowerInvariant())
+    {
+        case "pending":
+            return CliCommands.Pending(dataDir, Console.Out, settings.Dedupe.ExtraCompanySuffixes);
+        case "decide" when args.Length == 3:
+            return CliCommands.Decide(dataDir, args[1], args[2], Console.Out, Console.Error, settings.Dedupe.ExtraCompanySuffixes);
+        case "decide":
+            Console.Error.WriteLine("Uso: decide <postingId> approve|reject|applied");
+            return 2;
+        case { } unknown:
+            Console.Error.WriteLine($"Comando sconosciuto: '{unknown}'. Comandi: pending, decide <postingId> approve|reject|applied (senza argomenti: una run).");
+            return 2;
+    }
 
     var errors = SettingsValidator.Validate(settings, forRun: true);
     if (errors.Count > 0)
@@ -98,7 +122,6 @@ static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir
         settings.Area.Country!,
         resultsPerPage: mode == RunMode.Dry ? settings.DryRun.MaxPostingsPerQuery : 10,
         minimumPlausibleSalary: settings.Salary.MinimumPlausible);
-    ITelegramGateway? gateway = mode == RunMode.Normal ? TelegramGateway.FromEnvironment(httpClient) : null;
     var discoveryConfigured = !string.IsNullOrWhiteSpace(configuration["Jobbby:DiscoveryConfig"]);
 
     using var cancellation = new CancellationTokenSource();
@@ -109,18 +132,12 @@ static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir
         cancellation.Cancel();
     };
 
-    var runner = new JobbbyRunner(dataDir, new RunDependencies(jobSource, llm.Client, gateway, sources), discoveryConfigured);
+    var runner = new JobbbyRunner(dataDir, new RunDependencies(jobSource, llm.Client, sources), discoveryConfigured);
     var progress = new ConsoleProgress();
     var summary = await runner.RunAsync(settings, cvResult.Cv, mode, progress, cancellation.Token);
     Console.WriteLine($"Chiamate Adzuna: {summary.AdzunaCalls}");
 
-    if (summary.DryRunLog is not null)
-    {
-        var logPath = configuration["Jobbby:DryRunLogPath"]
-            ?? Path.Combine(dataDir.RunsDirectory, $"dry-run-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.json");
-        summary.DryRunLog.Save(logPath);
-        Console.WriteLine($"Log della dry run: {logPath}");
-    }
+    Console.WriteLine($"Run salvata in {summary.RunPath}");
 
     return summary.Cancelled ? 130 : 0;
 }

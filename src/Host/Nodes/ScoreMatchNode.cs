@@ -22,6 +22,8 @@ public sealed class ScoreMatchNode : INode
     public const string MatchJudgmentReasoningStateKey = "MatchJudgmentReasoning";
     public const string MissingRequirementsStateKey = "MissingRequirements";
     public const string PreferenceWarningsStateKey = "PreferenceWarnings";
+    public const string MatchCategoryStateKey = "MatchCategory";
+    public const string InsufficientInformationStateKey = "InsufficientInformation";
 
     private readonly CvData _candidateCv;
     private readonly MatchStageTwoJudge _stageTwoJudge;
@@ -59,6 +61,24 @@ public sealed class ScoreMatchNode : INode
             });
         }
 
+        // An excerpt that states no requirement at all says nothing about the fit: judging it
+        // would only produce a guess, so it waits for the user (who can paste the full text).
+        var insufficient = jobPosting.RequiredSkills.Count == 0
+            && (jobPosting.MustHaveSkills?.Count ?? 0) == 0
+            && jobPosting.MinYearsExperience is null;
+        if (insufficient)
+        {
+            return NodeResult.From(new Dictionary<string, object>
+            {
+                [MatchConfidenceStateKey] = 0.0,
+                [StageOnePassedStateKey] = true,
+                [StageOneReasonStateKey] = stageOneReason,
+                [InsufficientInformationStateKey] = true,
+                [MissingRequirementsStateKey] = stageOne.MissingRequirements,
+                [PreferenceWarningsStateKey] = stageOne.PreferenceWarnings,
+            });
+        }
+
         var judgment = await _stageTwoJudge.JudgeAsync(jobPosting, _candidateCv, cancellationToken).ConfigureAwait(false);
         var matchConfidence = MatchConfidenceMapper.ToMatchConfidence(judgment);
 
@@ -70,6 +90,7 @@ public sealed class ScoreMatchNode : INode
             [StageOnePassedStateKey] = true,
             [StageOneReasonStateKey] = stageOneReason,
             [MatchJudgmentReasoningStateKey] = judgment.Reasoning,
+            [MatchCategoryStateKey] = judgment.Category,
             [MissingRequirementsStateKey] = stageOne.MissingRequirements,
             [PreferenceWarningsStateKey] = stageOne.PreferenceWarnings,
         });

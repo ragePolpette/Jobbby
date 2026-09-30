@@ -31,28 +31,6 @@ public class DryRunTests
     }
 
     [Fact]
-    public void Log_SavesStructuredDetailedEvents()
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"dry-run-{Guid.NewGuid():N}.json");
-        try
-        {
-            var log = new DryRunLog();
-            log.Add("posting_evaluated", new { Title = "Backend Engineer", ActionTaken = "none" });
-
-            log.Save(path);
-
-            var json = File.ReadAllText(path);
-            Assert.Contains("posting_evaluated", json);
-            Assert.Contains("Backend Engineer", json);
-            Assert.Contains("none", json);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
-
-    [Fact]
     public async Task Graph_DryRunStopsAfterEvaluationWithoutTelegramOrLedgerWrite()
     {
         var ledgerPath = Path.Combine(Path.GetTempPath(), $"dry-run-ledger-{Guid.NewGuid():N}.json");
