@@ -34,14 +34,14 @@ public static class MatchStageOneFilter
             missing.AddRange(posting.RequiredLanguages.Where(language => !cv.Languages.Contains(language, StringComparer.OrdinalIgnoreCase)).Select(language => $"Lingua: {language}"));
 
         // Sources report locations like "Milano, Lombardia": a desired "Milano" contained in it counts.
-        if (posting.RemoteAvailable == false && cv.DesiredLocations.Count > 0 &&
+        if (posting.WorkMode is WorkMode.Onsite or WorkMode.Hybrid && cv.DesiredLocations.Count > 0 &&
             !cv.DesiredLocations.Any(desired => (posting.Location ?? string.Empty).Contains(desired, StringComparison.OrdinalIgnoreCase)))
             missing.Add($"Località: {posting.Location ?? "non specificata"}");
 
         if (posting.SalaryMaximum is not null && cv.MinimumSalary is not null && posting.SalaryMaximum < cv.MinimumSalary)
             missing.Add($"RAL massima {posting.SalaryMaximum} inferiore al minimo {cv.MinimumSalary}");
 
-        if (posting.RemoteAvailable == true && !cv.AcceptsRemote)
+        if (posting.WorkMode == WorkMode.Remote && !cv.AcceptsRemote)
             warnings.Add("Il ruolo è remoto ma il candidato preferisce lavoro in sede.");
 
         var passes = missing.Count == 0;

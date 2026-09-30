@@ -17,9 +17,11 @@ public sealed record JobPosting(
     List<string>? MustHaveStack = null,
     List<string>? PreferredStack = null,
     string? Location = null,
-    bool? RemoteAvailable = null,
+    WorkMode WorkMode = WorkMode.Unknown,
     decimal? SalaryMaximum = null,
-    List<string>? RequiredLanguages = null);
+    List<string>? RequiredLanguages = null,
+    double? MinYearsExperience = null,
+    SearchSweep Sweep = SearchSweep.Local);
 
 /// <summary>Valid values for <see cref="JobPosting.ApplyChannel"/>.</summary>
 public static class ApplyChannels

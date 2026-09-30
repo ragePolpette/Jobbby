@@ -73,7 +73,7 @@ public class MatchStageOneFilterTests
     [Fact]
     public void Evaluate_OnSiteLocationContainingDesiredCity_Passes()
     {
-        var posting = NewPosting(new[] { "C#" }, "Mid") with { Location = "Milano, Lombardia", RemoteAvailable = false };
+        var posting = NewPosting(new[] { "C#" }, "Mid") with { Location = "Milano, Lombardia", WorkMode = WorkMode.Onsite };
         var cv = NewCv(4, skills: new[] { "C#" }) with { DesiredLocations = new List<string> { "Milano" } };
 
         var (passes, _) = MatchStageOneFilter.Evaluate(posting, cv);
@@ -165,7 +165,7 @@ public class MatchStageOneFilterTests
     [Fact]
     public void Evaluate_OnSiteOutsideDesiredLocations_Fails()
     {
-        var posting = NewPosting(new[] { "C#" }, "Mid") with { Location = "Roma", RemoteAvailable = false };
+        var posting = NewPosting(new[] { "C#" }, "Mid") with { Location = "Roma", WorkMode = WorkMode.Onsite };
         var cv = NewCv(4, skills: new[] { "C#" }) with { DesiredLocations = new List<string> { "Milano" } };
 
         var result = MatchStageOneFilter.Evaluate(posting, cv);
