@@ -1,6 +1,6 @@
 # Jobbby: UI web, impostazioni unificate e messaggio di presentazione
 
-Data: 2026-09-30 · Revisione 2 (dopo la revisione scritta del proprietario) · Stato: in attesa di OK
+Data: 2026-09-30 · Revisione 3 · Stato: approvata dal proprietario il 2026-09-30
 
 ## Obiettivo
 
@@ -22,11 +22,11 @@ ricerca del proprietario: quei valori vivono solo nel `DataDir` di chi usa l'app
 | Tema | Decisione |
 |---|---|
 | Approvazioni | Solo dalla UI. Telegram resta nel codice ma non viene collegato; la rimozione è una decisione separata |
-| Flusso di approvazione | Asincrono: la run non attende; gli annunci tra le due soglie diventano `Pending` senza scadenza |
-| Annunci deboli | Scartati automaticamente con esito `AutoRejected`, distinto dal rifiuto umano |
+| Flusso di approvazione | Asincrono: la run non attende; Strong/Borderline sotto la soglia di auto-approvazione diventano `Pending` senza scadenza |
+| Annunci deboli | Scartati automaticamente con esito `AutoRejected` (solo stage 1 fallito o categoria `Weak`), distinto dal rifiuto umano |
 | RAL minima | Configurabile, applicata solo lato client (stage 1). Annuncio con retribuzione nota e inferiore: escluso. Senza retribuzione: sempre mostrato |
 | Zona di ricerca | Configurabile: paese, località, raggio in km, accetta remoto |
-| Testo completo degli annunci | Non recuperato: si lavora sull'estratto di 500 caratteri (vedi "Vincoli verificati") e si rivaluta se emergono problemi |
+| Testo completo degli annunci | Nessun recupero automatico (vedi "Vincoli verificati"). L'utente può incollarlo nel dettaglio annuncio: rivalutazione e messaggio usano quel testo |
 | Formato CV | JSON o PDF. YAML resta accettato dal loader; TOML non è supportato e non viene aggiunto |
 | Accesso alla UI | `http://127.0.0.1:5080`, pubblicata da un override di compose usato solo per il progetto jobbby |
 | Stack UI | ASP.NET Core minimal API + HTML/JS statici, nessun framework frontend né build step |
@@ -62,8 +62,9 @@ su `/docs/search`, `/docs/terms_of_service` e su chiamate reali a `/jobs/it/sear
   e da Windows, con qualsiasi User-Agent), anche su `/details/`.
 
 Decisione: nessun recupero automatico del testo completo. Aggirare il blocco richiederebbe un
-browser automatizzato che eluda una protezione anti-bot. Tutte le valutazioni e il messaggio di
-presentazione si basano sull'estratto, e la UI lo dichiara.
+browser automatizzato che eluda una protezione anti-bot. Le valutazioni automatiche si basano
+sull'estratto e la UI lo dichiara. Il testo completo entra solo se l'utente lo incolla (vedi
+"Testo completo fornito dall'utente").
 
 ## Architettura
 
@@ -121,6 +122,12 @@ temporaneo + rename, così un arresto a metà non corrompe nulla.
   processo, sia dal Web sia dalla CLI. Una CLI lanciata con il Web attivo fallisce subito con:
   *"DataDir già in uso da un altro processo Jobbby (probabilmente la UI web): chiudilo o usa la UI"*.
   Il lock è tenuto dal sistema operativo, quindi un crash lo rilascia senza file orfani.
+- **CLI e Web girano solo nel container.** Verificato il 2026-09-30 su bind mount da Windows: tra
+  processi nel container il lock funziona anche su bind mount (il secondo processo lo trova
+  occupato); tra un processo Windows e uno del container i due si bloccano a vicenda, ma il
+  container riceve un `Permission denied` generico invece di un lock riconoscibile. Un processo
+  Jobbby nativo su Windows non è quindi supportato. Il `DataDir` resta sul volume del container,
+  come previsto anche dalle regole dell'ambiente (nessuna cartella Windows montata).
 
 ### Impostazioni (`settings.json`)
 
@@ -131,9 +138,10 @@ Default per una nuova installazione, neutri:
   "searches": { "queries": [], "deriveFromCv": true, "maxDerivedQueries": 3 },
   "area": { "country": null, "where": "", "distanceKm": null, "acceptsRemote": false },
   "salary": { "minimumYearly": null, "minimumPlausible": 5000 },
-  "evaluation": { "autoApproveThreshold": 0.7, "autoRejectBelow": 0.4 },
+  "evaluation": { "autoApproveThreshold": 0.7 },
   "llm": { "provider": "claude-cli", "model": "sonnet" },
   "dryRun": { "maxPostingsPerQuery": 3 },
+  "remoteSweep": { "keywords": {} },
   "dedupe": { "extraCompanySuffixes": [] },
   "presentation": {
     "enabled": true,
@@ -188,9 +196,17 @@ Oggi `applications.json`, `cursors.json` e `run-reports.json` stanno in `AppCont
   Niente parametri di retribuzione.
 - **Remoto fuori zona**: se `acceptsRemote` è attivo e `where` è impostato, per ogni query si fa una
   seconda ricerca senza `where`. Dei suoi risultati si tengono solo gli annunci con `workMode = remote`.
-  Costo: una chiamata Adzuna in più per query, più una chiamata LLM di normalizzazione per ogni
-  annuncio ricevuto, perché il `workMode` si conosce solo dopo la normalizzazione. Il riepilogo prima
-  della run mostra le chiamate previste, quello finale quelle effettive.
+- **Prefiltro della ricerca remota**: prima della normalizzazione LLM, un risultato della ricerca
+  remota passa solo se titolo o estratto contengono una delle parole chiave configurate
+  (`remoteSweep.keywords`, per lingua, es. `{ "it": ["remoto", "smart working"], "en": ["remote"] }`).
+  Il confronto ignora maiuscole, minuscole e accenti. Si usano le parole di tutte le lingue
+  configurate, perché la lingua dell'annuncio non è nota a priori. Il default è nessuna parola:
+  la ricerca remota resta disattivata finché non se ne configura almeno una, e la UI lo spiega.
+  Le parole del proprietario vivono nel suo `settings.json`. Il prefiltro è solo un risparmio:
+  chi lo supera va comunque in normalizzazione, e resta solo `workMode = remote`.
+- Costo: una chiamata Adzuna in più per query, più una chiamata LLM per ogni risultato che supera il
+  prefiltro. Il riepilogo prima della run mostra le chiamate previste, quello finale quelle
+  effettive, compresi i risultati scartati dal prefiltro.
 - **Cursori**: la chiave diventa `source|country|where|distanceKm|sweep|query`, con `sweep` pari a
   `local` o `remote`. Cambiando zona non si riusa il `max_days_old` di un'altra zona.
 
@@ -235,13 +251,22 @@ Tutte le soglie arrivano dalle impostazioni.
 
 | Esito | Quando |
 |---|---|
-| `AutoRejected` | stage 1 fallito, oppure categoria `Weak`, oppure confidenza < `autoRejectBelow` |
-| `Pending` | `autoRejectBelow` ≤ confidenza < `autoApproveThreshold` |
-| `Shortlisted` | confidenza ≥ `autoApproveThreshold` |
+| `AutoRejected` | stage 1 fallito, oppure categoria `Weak` |
+| `Pending` | categoria `Strong` o `Borderline` con confidenza < `autoApproveThreshold`, qualunque sia la confidenza; oppure informazioni insufficienti (vedi sotto) |
+| `Shortlisted` | categoria `Strong` o `Borderline` con confidenza ≥ `autoApproveThreshold` |
 | `Approved` / `Rejected` | decisione dalla UI (o dalla CLI, vedi PR 2) |
 | `Applied` | "Segna come inviata" |
 | `Interrupted` | annuncio non completato per una cancellazione (solo nella run, non nel registro) |
 
+- La confidenza misura la certezza del giudizio, non l'aderenza, quindi non decide mai uno scarto.
+  Scartano solo lo stage 1 e la categoria `Weak`. `MatchConfidenceMapper` smette di azzerare la
+  confidenza dei `Weak`: l'esito lo decide la categoria, la confidenza resta quella dell'LLM.
+- **Informazioni insufficienti**: se la normalizzazione non estrae alcun requisito dall'estratto
+  (nessuna competenza richiesta e nessun anno di esperienza), l'annuncio salta il controllo delle
+  competenze dello stage 1 e lo scarto `Weak`. Va in `Pending` con motivo *"informazioni
+  insufficienti nell'estratto"*, e la UI suggerisce di incollare il testo completo. Non diventa mai
+  `AutoRejected`, perché quell'esito è terminale per la deduplica e l'annuncio non tornerebbe più.
+  Gli altri controlli dello stage 1 (località, retribuzione) restano validi.
 - `AutoRejected`, `Pending`, `Shortlisted`, `Approved`, `Rejected` e `Applied` sono tutti terminali
   per la deduplica: una run successiva non ripropone l'annuncio.
 - `Discovered`, il vecchio timeout di Telegram, resta leggibile nei record esistenti ma non viene più prodotto.
@@ -335,9 +360,25 @@ Una pagina con una barra in alto (**Run · Impostazioni · CV · Storico**) e un
     dell'annuncio, oppure un codice lingua), `extraInstructions`;
   - anteprima su un annuncio dello storico.
 - **In UI**: riquadro modificabile con Rigenera, Copia e Segna come inviata (`Applied`). Avviso fisso:
-  *"basato sull'estratto dell'annuncio (500 caratteri): verificalo prima di inviarlo"*.
+  *"basato sull'estratto dell'annuncio (500 caratteri): verificalo prima di inviarlo"*, oppure
+  *"basato sul testo che hai incollato"* quando c'è il testo completo.
 - **Salvataggio**: nel record del registro. Per gli annunci di una dry run, in `runs/<runId>.json`.
 - **Invio**: nessuno, resta manuale.
+
+## Testo completo fornito dall'utente
+
+- Nel dettaglio di un annuncio (storico, `Pending`, dry run) il campo **"Incolla testo completo"**
+  accetta il testo copiato dal browser, fino a 20.000 caratteri.
+- Al salvataggio parte una **rivalutazione** su quel testo: normalizzazione, stage 1, giudizio.
+  L'esito si aggiorna con le regole normali. Un annuncio già deciso dall'utente (`Approved`,
+  `Rejected`, `Applied`) mostra la nuova valutazione ma non cambia esito.
+- Il messaggio di presentazione generato o rigenerato dopo usa il testo completo.
+- **Salvataggio** nel record dell'annuncio (nella run, per una dry run): testo, data e le due
+  valutazioni (estratto e testo completo), marcato come **testo fornito dall'utente**.
+- **In UI**: badge "testo completo fornito da te" sull'annuncio. L'avviso del messaggio diventa
+  *"basato sul testo che hai incollato"*.
+- Il testo incollato è non fidato come quello di Adzuna: va nel DOM solo come testo e nei prompt è
+  delimitato.
 
 ## API web
 
@@ -356,6 +397,8 @@ Una pagina con una barra in alto (**Run · Impostazioni · CV · Storico**) e un
 | POST/PUT | `/api/postings/{postingId}/presentation` | generare o rigenerare / salvare una modifica |
 | POST/PUT | `/api/runs/{runId}/postings/{postingId}/presentation` | idem, per annunci di dry run |
 | POST | `/api/presentation/preview` | anteprima con impostazioni non ancora salvate |
+| PUT | `/api/postings/{postingId}/full-text` | salvare il testo incollato e rivalutare |
+| PUT | `/api/runs/{runId}/postings/{postingId}/full-text` | idem, per annunci di dry run |
 
 ## Sicurezza
 
@@ -397,7 +440,10 @@ L'avvio avviene con `dotnet run --project src/Web` nel container, con un'eventua
   - `PostingIdentity`: normalizzazione e id;
   - `SkillMatcher` senza alias e con `skill-aliases.json`;
   - stage 1: località con e senza `where`, `workMode`, retribuzione plausibile, anni di esperienza;
-  - soglie ed esiti (`AutoRejected`, `Pending`, `Shortlisted`);
+  - esiti: `AutoRejected` solo per stage 1 o `Weak`; Borderline con confidenza bassa → `Pending`;
+    nessun requisito estratto → `Pending` "informazioni insufficienti";
+  - prefiltro della ricerca remota (più lingue, accenti, nessuna parola configurata);
+  - rivalutazione su testo incollato, compreso un annuncio già deciso;
   - chiave dei cursori e ricerca remota;
   - lock del `DataDir`;
   - migrazione;
@@ -432,13 +478,14 @@ Sei PR incrementali, dopo #8 (già su `main`):
    così la PR è utilizzabile da sola.
 4. **UI web**: `src/Web` con Run, Impostazioni e Storico, sicurezza, override di compose.
 5. **Pagina CV** con estrazione modificabile.
-6. **Messaggio di presentazione**.
+6. **Messaggio di presentazione e testo incollato**: generazione e configurazione del messaggio,
+   campo "Incolla testo completo" con rivalutazione.
 
 ## Fuori scope
 
 - Rimozione di Telegram.
 - Run pianificate.
-- Testo completo degli annunci (vedi "Sito adzuna.it").
+- Recupero automatico del testo completo (vedi "Sito adzuna.it").
 - Altre fonti e crawler.
 - Discovery nel runner.
 - Login e deploy su server.
