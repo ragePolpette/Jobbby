@@ -1,5 +1,5 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
+using ApplicationLedger;
 using Config;
 using JobPostings;
 using Reporting;
@@ -45,8 +45,10 @@ public static class MultiQueryFetcher
         IReadOnlyDictionary<string, SourceCursor> cursors,
         int? postingLimitPerQuery,
         DateTimeOffset runAt,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IEnumerable<string>? extraCompanySuffixes = null)
     {
+        var suffixes = extraCompanySuffixes?.ToList();
         var merged = new List<RawPosting>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var outcomes = new List<QueryFetchOutcome>();
@@ -91,7 +93,9 @@ public static class MultiQueryFetcher
                     // Both keys are always recorded: the same ad under another URL, or a reposted
                     // ad (new id, "Acme S.r.l" vs "ACME SRL") under the same URL, is still one posting.
                     var urlSeen = !string.IsNullOrWhiteSpace(posting.ApplyUrl) && !seen.Add("url:" + posting.ApplyUrl);
-                    var titleSeen = !seen.Add("job:" + TitleCompanyKey(posting));
+                    // Without a company the title alone would merge unrelated employers' ads.
+                    var titleSeen = PostingIdentity.NormalizeCompany(posting.Company, suffixes).Length > 0
+                        && !seen.Add("job:" + PostingIdentity.Key(posting.Company, posting.RawTitle, suffixes));
                     if (!urlSeen && !titleSeen)
                         merged.Add(posting);
                 }
@@ -103,19 +107,4 @@ public static class MultiQueryFetcher
 
         return new SourceFetchResult(merged, outcomes);
     }
-
-    private static readonly Regex NonAlphanumeric = new(@"[^\p{L}\p{N}#+]+", RegexOptions.Compiled);
-
-    private static readonly Regex LegalSuffix = new(
-        @"\b(s ?r ?l ?s?|s ?p ?a|s ?a ?s|s ?n ?c|s ?a|gmbh|ag|kg|b ?v|n ?v|ltd|plc|llc|inc|corp|oy|ab|a ?s|s ?l|sp z ?o ?o|kft)$",
-        RegexOptions.Compiled);
-
-    internal static string TitleCompanyKey(RawPosting posting) =>
-        $"{NormalizeText(posting.RawTitle)}|{NormalizeCompany(posting.Company)}";
-
-    private static string NormalizeText(string value) =>
-        NonAlphanumeric.Replace(value.ToLowerInvariant(), " ").Trim();
-
-    private static string NormalizeCompany(string value) =>
-        Regex.Replace(LegalSuffix.Replace(NormalizeText(value), " "), @"\s+", " ").Trim();
 }

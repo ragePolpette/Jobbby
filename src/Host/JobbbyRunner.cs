@@ -145,7 +145,8 @@ public sealed class JobbbyRunner
             {
                 var fetch = await MultiQueryFetcher.FetchAsync(
                     _deps.JobSource, source, plan.Queries, country, area, remoteFilter, cursors,
-                    mode == RunMode.Dry ? settings.DryRun.MaxPostingsPerQuery : null, runAt, cancellationToken).ConfigureAwait(false);
+                    mode == RunMode.Dry ? settings.DryRun.MaxPostingsPerQuery : null, runAt, cancellationToken,
+                    settings.Dedupe.ExtraCompanySuffixes).ConfigureAwait(false);
                 adzunaCalls += fetch.AdzunaCalls;
                 var localQueries = fetch.Queries.Where(query => query.Sweep == JobPostings.SearchSweep.Local).ToList();
                 if (resolved.FromCv && localQueries.Count > 0 && localQueries.All(query => query.Error is null && query.Returned == 0))
