@@ -30,7 +30,7 @@ public sealed class DefaultRunDependenciesFactory(IConfiguration configuration, 
 /// <summary>
 /// The one <see cref="ApplicationLedger.ApplicationLedger"/> of the process, shared by runs and
 /// API decisions: two instances would each hold the file in memory and overwrite each other.
-/// Rebuilt (from the file) only when the company-suffix settings change the keys.
+/// A change of the company-suffix settings rekeys that same instance, even mid-run.
 /// </summary>
 public sealed class LedgerHolder(DataDir dataDir)
 {
@@ -40,15 +40,14 @@ public sealed class LedgerHolder(DataDir dataDir)
 
     public ApplicationLedger.ApplicationLedger Get(IReadOnlyList<string> extraCompanySuffixes)
     {
-        var key = string.Join('\u0001', extraCompanySuffixes.Select(s => s.Trim().ToLowerInvariant()).Order());
+        var key = string.Join('\u0001', extraCompanySuffixes.Select(ApplicationLedger.PostingIdentity.NormalizeText).Where(s => s.Length > 0).Distinct().Order());
         lock (_lock)
         {
-            if (_ledger is null || key != _suffixKey)
-            {
+            if (_ledger is null)
                 _ledger = new ApplicationLedger.ApplicationLedger(dataDir.ApplicationsPath, extraCompanySuffixes);
-                _suffixKey = key;
-            }
-
+            else if (key != _suffixKey)
+                _ledger.Rekey(extraCompanySuffixes);
+            _suffixKey = key;
             return _ledger;
         }
     }

@@ -47,6 +47,23 @@ public static class JobbbyWeb
         var app = builder.Build();
         app.Lifetime.ApplicationStopped.Register(dataDirLock.Dispose);
 
+        app.Use(async (context, next) =>
+        {
+            var headers = context.Response.Headers;
+            headers["X-Frame-Options"] = "DENY";
+            headers["Content-Security-Policy"] = "frame-ancestors 'none'";
+            headers["X-Content-Type-Options"] = "nosniff";
+            try
+            {
+                await next();
+            }
+            catch (SettingsFileException ex) when (!context.Response.HasStarted)
+            {
+                // A hand-broken settings.json or skill-aliases.json: say which file and why.
+                context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                await context.Response.WriteAsJsonAsync(new { error = ex.Message });
+            }
+        });
         app.UseRequestGuard();
         app.UseDefaultFiles();
         app.UseStaticFiles();

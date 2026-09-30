@@ -19,7 +19,7 @@ public sealed class ApplicationLedger
     };
 
     private readonly string _filePath;
-    private readonly List<ApplicationRecord> _records;
+    private List<ApplicationRecord> _records;
     private readonly object _lock = new();
 
     public ApplicationLedger(string filePath, IEnumerable<string>? extraCompanySuffixes = null)
@@ -102,6 +102,17 @@ public sealed class ApplicationLedger
             RecordOutcome(decided);
             return decided;
         }
+    }
+
+    /// <summary>
+    /// Recomputes every key for new company-suffix settings, on this same instance: a second
+    /// instance would hold its own copy of the file and overwrite this one's writes.
+    /// </summary>
+    public void Rekey(IEnumerable<string>? extraCompanySuffixes)
+    {
+        var suffixes = extraCompanySuffixes?.ToList();
+        lock (_lock)
+            _records = _records.Select(record => Rekey(record, suffixes)).ToList();
     }
 
     private static ApplicationRecord Rekey(ApplicationRecord record, IReadOnlyList<string>? suffixes)

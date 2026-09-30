@@ -409,7 +409,7 @@ async function renderSettings() {
     for (const node of form.querySelectorAll("[aria-invalid]")) node.removeAttribute("aria-invalid");
     const updated = {
       ...settings,
-      searches: { queries: lines(value("searches.queries")), deriveFromCv: checked("searches.deriveFromCv"), maxDerivedQueries: Number(value("searches.maxDerivedQueries")) },
+      searches: { queries: lines(value("searches.queries")), deriveFromCv: checked("searches.deriveFromCv"), maxDerivedQueries: numberOrNull(value("searches.maxDerivedQueries")) },
       area: {
         country: value("area.country") || null,
         where: value("area.where").trim(),
@@ -417,10 +417,10 @@ async function renderSettings() {
         distanceKm: numberOrNull(value("area.distanceKm")),
         acceptsRemote: checked("area.acceptsRemote"),
       },
-      salary: { minimumYearly: numberOrNull(value("salary.minimumYearly")), minimumPlausible: Number(value("salary.minimumPlausible")) },
-      evaluation: { autoApproveThreshold: Number(value("evaluation.autoApproveThreshold")) },
+      salary: { minimumYearly: numberOrNull(value("salary.minimumYearly")), minimumPlausible: numberOrNull(value("salary.minimumPlausible")) },
+      evaluation: { autoApproveThreshold: numberOrNull(value("evaluation.autoApproveThreshold")) },
       llm: { provider: value("llm.provider"), model: value("llm.model").trim() || null },
-      dryRun: { maxPostingsPerQuery: Number(value("dryRun.maxPostingsPerQuery")) },
+      dryRun: { maxPostingsPerQuery: numberOrNull(value("dryRun.maxPostingsPerQuery")) },
       remoteSweep: { keywords: textToKeywords(value("remoteSweep.keywords")) },
       dedupe: { extraCompanySuffixes: lines(value("dedupe.extraCompanySuffixes")) },
     };
@@ -429,15 +429,22 @@ async function renderSettings() {
       notice(form, "Impostazioni salvate.", "success");
     } catch (error) {
       const errors = (error.data && error.data.errors) || [];
+      const unmatched = [];
       for (const { field: name, message } of errors) {
-        const container = form.querySelector(`[data-field="${CSS.escape(name)}"]`);
+        // Server paths may be deeper than the form ("searches.queries[0]", "remoteSweep.keywords.it").
+        const base = String(name || "").replace(/\[\d+\]$/, "");
+        const container = form.querySelector(`[data-field="${CSS.escape(base)}"]`)
+          || form.querySelector(`[data-field="${CSS.escape(base.split(".").slice(0, 2).join("."))}"]`);
         if (container) {
           container.querySelector(".error").textContent = message;
           const input = container.querySelector("input, select, textarea");
           input && input.setAttribute("aria-invalid", "true");
+        } else {
+          unmatched.push(message);
         }
       }
-      notice(form, errors.length ? "Controlla i campi evidenziati." : error.message, "error");
+      const summary = errors.length ? ["Controlla i campi evidenziati.", ...unmatched].join(" ") : error.message;
+      notice(form, summary, "error");
     }
   };
 }
