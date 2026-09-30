@@ -15,4 +15,6 @@ public sealed record RawPosting(
     string ApplyUrl,
     string SourceDomain,
     string Company = "",
-    DateTimeOffset? PostedAt = null);
+    DateTimeOffset? PostedAt = null,
+    string? Location = null,
+    decimal? SalaryMaximum = null);

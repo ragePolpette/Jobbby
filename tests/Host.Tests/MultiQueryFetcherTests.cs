@@ -29,6 +29,29 @@ public class MultiQueryFetcherTests
     }
 
     [Fact]
+    public async Task FetchAsync_RepostedAdWithNewUrlAndCompanySpelling_IsKeptOnce()
+    {
+        var jobSource = new MockJobSource(new Dictionary<string, IReadOnlyList<RawPosting>>
+        {
+            [".NET developer"] = new[]
+            {
+                Posting("Senior Developer .NET - Solution Architect", "https://jobs.example/5902639270", "JUMPIT S.R.L."),
+                Posting("Senior Developer .NET - Solution Architect", "https://jobs.example/5902278516", "Jumpit S.r.l"),
+                Posting("Microsoft Full Stack Developer (C#  SQL)", "https://jobs.example/1", "NTT America, Inc."),
+                Posting("Microsoft Full Stack Developer (C# SQL)", "https://jobs.example/2", "NTT America Inc"),
+                Posting("Microsoft Full Stack Developer (C# SQL)", "https://jobs.example/3", "NTT Data Italia"),
+            },
+        });
+
+        var result = await MultiQueryFetcher.FetchAsync(jobSource, Adzuna, new[] { ".NET developer" },
+            new Dictionary<string, SourceCursor>(), postingLimitPerQuery: null, RunAt);
+
+        Assert.Equal(
+            new[] { "https://jobs.example/5902639270", "https://jobs.example/1", "https://jobs.example/3" },
+            result.Postings.Select(p => p.ApplyUrl));
+    }
+
+    [Fact]
     public async Task FetchAsync_UsesAndProducesOneCursorPerQuery()
     {
         var previous = new SourceCursor("Adzuna|AI engineer", "https://jobs.example/old", RunAt.AddDays(-2));
@@ -80,6 +103,6 @@ public class MultiQueryFetcherTests
         Assert.Equal(new[] { "A1", "B1" }, result.Postings.Select(p => p.RawTitle));
     }
 
-    private static RawPosting Posting(string title, string applyUrl) =>
-        new(title, "description", applyUrl, "api.adzuna.com", "Acme", RunAt.AddHours(-1));
+    private static RawPosting Posting(string title, string applyUrl, string company = "Acme") =>
+        new(title, "description", applyUrl, "api.adzuna.com", company, RunAt.AddHours(-1));
 }

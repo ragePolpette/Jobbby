@@ -14,7 +14,9 @@ Le fonti (`src/Config/sources.json`) dicono *dove* cercare, le ricerche (`src/Co
 }
 ```
 
-Con `deriveFromCv` l'LLM aggiunge fino a `maxDerivedQueries` (massimo 10) ruoli ricavati dal CV, senza ripetere quelli già configurati. Se la derivazione fallisce si usano solo le query configurate. Gli annunci restituiti da più query vengono valutati una volta sola, e ogni coppia fonte/query ha il proprio cursore. Un file diverso può essere indicato con `Jobbby__SearchesConfig`.
+Adzuna ignora le sigle di due lettere: "AI engineer" viene cercato come "engineer" e restituisce annunci di ogni tipo. Usare la forma estesa ("Artificial Intelligence engineer") o sigle più lunghe ("LLM engineer").
+
+Con `deriveFromCv` l'LLM aggiunge fino a `maxDerivedQueries` (massimo 10) ruoli ricavati dal CV, senza ripetere quelli già configurati. Se la derivazione fallisce si usano solo le query configurate. Gli annunci restituiti da più query, o ripubblicati con un nuovo link e l'azienda scritta diversamente ("Acme S.r.l" / "ACME SRL"), vengono valutati una volta sola, e ogni coppia fonte/query ha il proprio cursore. Un file diverso può essere indicato con `Jobbby__SearchesConfig`.
 
 Il CV predefinito è `src/Host/cv.json`. Per usare un PDF, tenuto fuori dal repository, indicarne il percorso con `Jobbby__CvPath=/percorso/cv.pdf`: il testo viene estratto e strutturato dall'LLM a ogni esecuzione.
 

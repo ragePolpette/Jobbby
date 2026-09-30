@@ -14,13 +14,13 @@ public static class MatchStageOneFilter
 {
     public static MatchStageOneResult Evaluate(JobPosting posting, CvData cv)
     {
-        var candidateStack = BuildCandidateStack(cv);
+        var candidateStack = new SkillMatcher(BuildCandidateStack(cv));
         var requiredStack = posting.RequiredStack ?? new List<string>();
         var mustHaveStack = posting.MustHaveStack ?? new List<string>();
         var preferredStack = posting.PreferredStack ?? new List<string>();
-        var matched = requiredStack.Where(candidateStack.Contains).ToList();
-        var missing = mustHaveStack.Where(skill => !candidateStack.Contains(skill)).ToList();
-        var warnings = preferredStack.Where(skill => !candidateStack.Contains(skill)).Select(skill => $"Competenza preferenziale non presente: {skill}").ToList();
+        var matched = requiredStack.Where(candidateStack.Covers).ToList();
+        var missing = mustHaveStack.Where(skill => !candidateStack.Covers(skill)).ToList();
+        var warnings = preferredStack.Where(skill => !candidateStack.Covers(skill)).Select(skill => $"Competenza preferenziale non presente: {skill}").ToList();
 
         if (requiredStack.Count > 0 && matched.Count == 0)
             missing.Add($"Nessuna sovrapposizione, serve almeno una competenza tra: {string.Join(", ", requiredStack)}");
@@ -33,8 +33,9 @@ public static class MatchStageOneFilter
         if (posting.RequiredLanguages is { Count: > 0 })
             missing.AddRange(posting.RequiredLanguages.Where(language => !cv.Languages.Contains(language, StringComparer.OrdinalIgnoreCase)).Select(language => $"Lingua: {language}"));
 
+        // Sources report locations like "Milano, Lombardia": a desired "Milano" contained in it counts.
         if (posting.RemoteAvailable == false && cv.DesiredLocations.Count > 0 &&
-            !cv.DesiredLocations.Contains(posting.Location ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+            !cv.DesiredLocations.Any(desired => (posting.Location ?? string.Empty).Contains(desired, StringComparison.OrdinalIgnoreCase)))
             missing.Add($"Località: {posting.Location ?? "non specificata"}");
 
         if (posting.SalaryMaximum is not null && cv.MinimumSalary is not null && posting.SalaryMaximum < cv.MinimumSalary)
@@ -56,14 +57,8 @@ public static class MatchStageOneFilter
         };
     }
 
-    private static HashSet<string> BuildCandidateStack(CvData cv)
-    {
-        var stack = new HashSet<string>(cv.Skills, StringComparer.OrdinalIgnoreCase);
-        foreach (var role in cv.Roles)
-            foreach (var tech in role.Stack)
-                stack.Add(tech);
-        return stack;
-    }
+    private static IEnumerable<string> BuildCandidateStack(CvData cv) =>
+        cv.Skills.Concat(cv.Roles.SelectMany(role => role.Stack));
 
     private enum SeniorityBand { Junior, Mid, Senior, Staff }
 

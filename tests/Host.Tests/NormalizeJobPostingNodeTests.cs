@@ -19,6 +19,35 @@ public class NormalizeJobPostingNodeTests
         });
 
     [Fact]
+    public async Task ExecuteAsync_CarriesSourceLocationAndSalaryAndLlmRemoteFlag()
+    {
+        var rawPosting = new RawPosting("Backend Engineer", "Full remote", "https://jobs.example/1", "api.adzuna.com",
+            "Acme", Location: "Milano, Lombardia", SalaryMaximum: 55000m);
+        var node = new NormalizeJobPostingNode(new MockLlmClient(
+            """{"seniorityLevel":"Senior","requiredStack":["C#"],"remoteAvailable":true}"""));
+
+        var result = await node.ExecuteAsync(NewStateFor(rawPosting));
+        var jobPosting = (JobPosting)result.Updates[NormalizeJobPostingNode.JobPostingStateKey];
+
+        Assert.Equal("Milano, Lombardia", jobPosting.Location);
+        Assert.Equal(55000m, jobPosting.SalaryMaximum);
+        Assert.True(jobPosting.RemoteAvailable);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RemoteNotMentioned_StaysUnknown()
+    {
+        var rawPosting = new RawPosting("Backend Engineer", "desc", "https://jobs.example/1", "api.adzuna.com", "Acme");
+        var node = new NormalizeJobPostingNode(new MockLlmClient(FixedExtraction));
+
+        var result = await node.ExecuteAsync(NewStateFor(rawPosting));
+        var jobPosting = (JobPosting)result.Updates[NormalizeJobPostingNode.JobPostingStateKey];
+
+        Assert.Null(jobPosting.RemoteAvailable);
+        Assert.Null(jobPosting.Location);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_MailtoApplyUrl_ChannelIsEmail()
     {
         var rawPosting = new RawPosting("Backend Engineer", "Ottima opportunita", "mailto:hr@acme.example", "acme.example");
