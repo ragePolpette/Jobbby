@@ -61,8 +61,7 @@ public static class SettingsStore
         }
 
         // System.Text.Json assigns an explicit null even to non-nullable properties.
-        var nullFields = new List<string>();
-        CollectNullFields(loaded, prefix: "", nullFields);
+        var nullFields = NullFields(loaded);
         if (nullFields.Count > 0)
             throw new SettingsFileException($"{settingsPath} non valido: questi campi non possono essere null: {string.Join(", ", nullFields)}.");
 
@@ -70,6 +69,14 @@ public static class SettingsStore
         var unknown = new List<string>();
         CollectUnknownFields(document.RootElement, typeof(JobbbySettings), prefix: "", unknown);
         return new SettingsLoadResult(loaded, Created: false, unknown.Select(field => $"Campo sconosciuto ignorato: {field}").ToList());
+    }
+
+    /// <summary>Non-nullable fields that hold null (JSON null): each one's dotted path.</summary>
+    public static IReadOnlyList<string> NullFields(JobbbySettings settings)
+    {
+        var nullFields = new List<string>();
+        CollectNullFields(settings, prefix: "", nullFields);
+        return nullFields;
     }
 
     private static readonly NullabilityInfoContext Nullability = new();

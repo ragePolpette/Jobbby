@@ -103,11 +103,10 @@ static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir
     var llm = LlmClientFactory.Create(settings.Llm, configuration, httpClient);
     Console.WriteLine($"LLM: {llm.Provider} {llm.Model}");
 
-    var cvPath = configuration["Jobbby:CvPath"]
-        ?? new[] { dataDir.CvExtractedPath, dataDir.CvJsonPath, dataDir.CvPdfPath }.FirstOrDefault(File.Exists);
+    var cvPath = CvLocator.Find(dataDir, configuration);
     if (cvPath is null)
     {
-        Console.Error.WriteLine($"Nessun CV trovato: metti cv.pdf o cv.json in {dataDir.Root} (oppure imposta Jobbby:CvPath).");
+        Console.Error.WriteLine(CvLocator.NotFoundMessage(dataDir));
         return 2;
     }
 

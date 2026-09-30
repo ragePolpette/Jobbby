@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jobbby</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="top">
+    <span class="brand">Jobbby</span>
+    <nav aria-label="Sezioni">
+      <button type="button" class="tab" data-tab="run" aria-current="page">Run</button>
+      <button type="button" class="tab" data-tab="settings">Impostazioni</button>
+      <button type="button" class="tab" data-tab="cv">CV</button>
+      <button type="button" class="tab" data-tab="history">Storico</button>
+    </nav>
+    <button type="button" class="pending-count" id="pending-count" data-tab="run" hidden></button>
+  </header>
+
+  <main>
+    <section id="tab-run" class="page" aria-labelledby="run-title">
+      <h1 id="run-title">Run</h1>
+      <div class="run-plan" id="run-plan"></div>
+      <div class="actions">
+        <button type="button" class="primary" id="start-dry">Avvia dry run</button>
+        <button type="button" id="start-normal">Avvia run</button>
+        <button type="button" class="danger" id="cancel-run" hidden>Interrompi</button>
+      </div>
+      <p class="hint">La dry run cerca e valuta davvero, ma non registra esiti né cursori. La run registra gli esiti: gli annunci sotto la soglia finiscono qui sotto, da decidere.</p>
+      <div class="run-status" id="run-status" aria-live="polite"></div>
+      <ol class="events" id="run-events"></ol>
+
+      <h2 id="pending-title">Da decidere</h2>
+      <div id="pending-list"></div>
+    </section>
+
+    <section id="tab-settings" class="page" aria-labelledby="settings-title" hidden>
+      <h1 id="settings-title">Impostazioni</h1>
+      <form id="settings-form" novalidate></form>
+    </section>
+
+    <section id="tab-cv" class="page" aria-labelledby="cv-title" hidden>
+      <h1 id="cv-title">CV</h1>
+      <div id="cv-view"></div>
+    </section>
+
+    <section id="tab-history" class="page" aria-labelledby="history-title" hidden>
+      <h1 id="history-title">Storico</h1>
+      <div id="history-list"></div>
+      <div id="history-detail"></div>
+    </section>
+  </main>
+
+  <footer class="bottom">
+    <a href="https://www.adzuna.it" target="_blank" rel="noopener noreferrer">Jobs by Adzuna</a>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

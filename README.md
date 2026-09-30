@@ -54,6 +54,18 @@ Con `llm.provider` = `openai` servono anche `Llm:Endpoint` (URL completo di chat
 
 Con `llm.provider` = `claude-cli` si usa il CLI di Claude Code già autenticato, senza endpoint né API key. Il CLI viene lanciato senza strumenti, server MCP né impostazioni utente/progetto, con un timeout di 120 secondi e al massimo 2 processi in parallelo. Opzioni di configurazione: `Llm:ClaudePath` (default `claude`), `Llm:TimeoutSeconds`, `Llm:MaxConcurrency`. Ogni chiamata avvia un processo, quindi è più lento dell'API diretta.
 
+## UI web
+
+```bash
+Jobbby__DataDir=/percorso/dati dotnet run --project src/Web
+```
+
+Ascolta su `http://0.0.0.0:5080` nel container; `Personal.cmd -Project jobbby` pubblica la porta solo su `127.0.0.1:5080` del PC (override `compose.jobbby.yaml`), e `-Action Web` / `-Action WebStop` avviano e fermano la UI. Dalla UI si modificano le impostazioni, si lanciano dry run e run (una alla volta, con avanzamento e Interrompi), si decidono gli annunci in attesa e si consulta lo storico delle run.
+
+- Nessun login: la UI accetta solo gli host `localhost` e `127.0.0.1` (protezione dal DNS rebinding), e ogni richiesta che modifica dati deve avere l'header `X-Jobbby-Request: 1` e, se presente, l'`Origin` dell'app.
+- UI e CLI non girano insieme sullo stesso `DataDir`: il secondo processo esce con un messaggio.
+- I segreti restano in user-secrets (lo stesso store della CLI): la UI mostra solo se sono impostati.
+
 ## Esecuzione
 
 ```bash
