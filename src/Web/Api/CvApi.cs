@@ -44,7 +44,7 @@ public static class CvApi
             await file.CopyToAsync(buffer, cancellationToken);
             var content = buffer.ToArray();
             return await gate.RunAsync(async () =>
-                Describe(await store.UploadAsync(content, dependencies.CreateLlm(settings.Load()), cancellationToken), dataDir, configuration));
+                Describe(await store.UploadAsync(content, () => dependencies.CreateLlm(settings.Load()), cancellationToken), dataDir, configuration));
         });
 
         app.MapPut("/api/cv", async (HttpRequest request, CvStore store, CvGate gate, DataDir dataDir, IConfiguration configuration) =>

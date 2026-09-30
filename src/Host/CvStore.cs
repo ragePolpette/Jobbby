@@ -64,14 +64,18 @@ public sealed class CvStore(DataDir dataDir)
     }
 
     /// <summary>A PDF (recognised by its content, whatever the file name) or a JSON CV.</summary>
-    public async Task<CvState> UploadAsync(byte[] content, ILlmClient llm, CancellationToken cancellationToken = default)
+    public Task<CvState> UploadAsync(byte[] content, ILlmClient llm, CancellationToken cancellationToken = default) =>
+        UploadAsync(content, () => llm, cancellationToken);
+
+    /// <summary>The LLM is built only for a PDF: a JSON upload works even when the LLM settings are incomplete.</summary>
+    public async Task<CvState> UploadAsync(byte[] content, Func<ILlmClient> llm, CancellationToken cancellationToken = default)
     {
         if (content.Length > MaxUploadBytes)
             throw new CvFileException($"Il file supera il limite di {MaxUploadBytes / (1024 * 1024)} MB.");
 
         if (IsPdf(content))
         {
-            var extracted = await ExtractAsync(content, llm, cancellationToken).ConfigureAwait(false);
+            var extracted = await ExtractAsync(content, llm(), cancellationToken).ConfigureAwait(false);
             // The structured CV first: if the process stops between the writes, runs already use the new CV.
             WriteStructured(extracted);
             AtomicFile.WriteAllBytes(dataDir.CvPdfPath, content);

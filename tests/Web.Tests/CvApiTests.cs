@@ -68,6 +68,27 @@ public class CvApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Upload_Json_WorksEvenWhenTheLlmIsMisconfigured()
+    {
+        _factory.LlmConfigurationError = "Missing Llm:Endpoint configuration.";
+
+        var response = await _factory.CreateAppClient().PostAsync("/api/cv", Upload(Encoding.UTF8.GetBytes("""{"name":"Senza LLM"}"""), "cv.json"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Upload_Pdf_WithAMisconfiguredLlm_Is400_WithTheReason()
+    {
+        _factory.LlmConfigurationError = "Missing Llm:Endpoint configuration.";
+
+        var response = await _factory.CreateAppClient().PostAsync("/api/cv", Upload(Pdf("Anna"), "cv.pdf"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("Llm:Endpoint", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task Upload_WrongFormat_Is400_WithAMessage()
     {
         var response = await _factory.CreateAppClient().PostAsync("/api/cv", Upload(Encoding.UTF8.GetBytes("ciao"), "cv.txt"));

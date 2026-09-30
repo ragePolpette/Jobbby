@@ -32,6 +32,9 @@ public sealed class JobbbyWebFactory : WebApplicationFactory<Program>
 
     public ILlmClient Llm { get; set; } = new PromptRoutedLlm();
 
+    /// <summary>When set, building the LLM fails like a misconfigured provider (e.g. openai without Llm:Endpoint).</summary>
+    public string? LlmConfigurationError { get; set; }
+
     public void WriteSettings(JobbbySettings settings) => SettingsStore.Save(DataDir.SettingsPath, settings);
 
     public static JobbbySettings RunnableSettings()
@@ -70,7 +73,8 @@ public sealed class JobbbyWebFactory : WebApplicationFactory<Program>
         public RunDependencies Create(JobbbySettings settings, RunMode mode, Func<IReadOnlyList<string>, ApplicationLedger.ApplicationLedger> ledger) =>
             new(factory.Source, factory.Llm, new[] { new SourceDefinition { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" } }, ledger);
 
-        public ILlmClient CreateLlm(JobbbySettings settings) => factory.Llm;
+        public ILlmClient CreateLlm(JobbbySettings settings) =>
+            factory.LlmConfigurationError is { } error ? throw new InvalidOperationException(error) : factory.Llm;
     }
 }
 
