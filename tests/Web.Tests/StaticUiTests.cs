@@ -40,5 +40,19 @@ public class StaticUiTests : IDisposable
         Assert.Contains("X-Jobbby-Request", script);
     }
 
+    [Fact]
+    public async Task CvPage_UploadsEditsExtractsAndPreviews_WithTheCurrentApiShape()
+    {
+        var script = await _factory.CreateClient().GetStringAsync("/app.js");
+
+        Assert.Contains("new FormData()", script);
+        Assert.Contains("\"/api/cv/extract\"", script);
+        Assert.Contains("\"/api/cv/derived-queries\"", script);
+        Assert.Contains("api(\"PUT\", \"/api/cv\"", script);
+        // The GET /api/cv shape of the read-only page is gone.
+        Assert.DoesNotContain("cv.file", script);
+        Assert.DoesNotContain("cv.message", script);
+    }
+
     public void Dispose() => _factory.Dispose();
 }

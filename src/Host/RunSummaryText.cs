@@ -18,9 +18,9 @@ public static class RunSummaryText
             var reason = state.Get<string>(RecordOutcomeNode.ReasonStateKey);
             return outcome switch
             {
-                ApplicationLedger.ApplicationOutcomes.AutoRejected => $"scartato automaticamente ({reason})",
-                ApplicationLedger.ApplicationOutcomes.Pending => $"da decidere ({reason})",
-                ApplicationLedger.ApplicationOutcomes.Shortlisted => $"selezionato automaticamente ({reason})",
+                ApplicationLedger.ApplicationOutcomes.AutoRejected => WithReason("scartato automaticamente", reason),
+                ApplicationLedger.ApplicationOutcomes.Pending => WithReason("da decidere", reason),
+                ApplicationLedger.ApplicationOutcomes.Shortlisted => WithReason("selezionato automaticamente", reason),
                 _ => outcome,
             };
         }
@@ -35,6 +35,12 @@ public static class RunSummaryText
             return "in attesa di approvazione";
         return state.Get<bool>(RecordIfApprovedNode.RecordedStateKey) ? "approvato" : "rifiutato";
     }
+
+    /// <summary>"label (reason)", or the reason alone when it already starts with the label.</summary>
+    private static string WithReason(string label, string? reason) =>
+        string.IsNullOrWhiteSpace(reason) ? label
+        : reason.StartsWith(label, StringComparison.OrdinalIgnoreCase) ? reason
+        : $"{label} ({reason})";
 
     public static string Build(RunReport report)
     {

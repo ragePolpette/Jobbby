@@ -6,7 +6,10 @@ namespace Web.Api;
 public static class SettingsApi
 {
     /// <summary>Secrets whose presence the UI shows; their values never leave the server.</summary>
-    private static readonly string[] SecretKeys = { "Adzuna:AppId", "Adzuna:AppKey", "Llm:Endpoint", "Llm:ApiKey" };
+    private static readonly string[] SourceSecretKeys = { "Adzuna:AppId", "Adzuna:AppKey" };
+
+    /// <summary>Only the openai provider needs an endpoint and a key; claude-cli uses the local login.</summary>
+    private static readonly string[] OpenAiSecretKeys = { "Llm:Endpoint", "Llm:ApiKey" };
 
     public static void MapSettingsApi(this WebApplication app)
     {
@@ -38,8 +41,12 @@ public static class SettingsApi
             return Results.Json(candidate);
         });
 
-        app.MapGet("/api/secrets/status", (IConfiguration configuration) =>
-            Results.Json(SecretKeys.ToDictionary(key => key, key => !string.IsNullOrWhiteSpace(configuration[key]))));
+        app.MapGet("/api/secrets/status", (IConfiguration configuration, SettingsService settings) =>
+        {
+            var openAi = string.Equals(settings.Load().Llm.Provider?.Trim(), Host.LlmClientFactory.OpenAiProvider, StringComparison.OrdinalIgnoreCase);
+            var keys = openAi ? SourceSecretKeys.Concat(OpenAiSecretKeys) : SourceSecretKeys;
+            return Results.Json(keys.ToDictionary(key => key, key => !string.IsNullOrWhiteSpace(configuration[key])));
+        });
     }
 
     private static IResult ValidationProblem(params SettingsError[] errors) =>

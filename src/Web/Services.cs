@@ -8,6 +8,9 @@ namespace Web;
 public interface IRunDependenciesFactory
 {
     RunDependencies Create(JobbbySettings settings, RunMode mode, Func<IReadOnlyList<string>, ApplicationLedger.ApplicationLedger> ledger);
+
+    /// <summary>The configured LLM alone, for CV extraction and query previews outside a run.</summary>
+    GraphEngine.ILlmClient CreateLlm(JobbbySettings settings);
 }
 
 /// <summary>Adzuna and the configured LLM, with secrets from user-secrets / environment.</summary>
@@ -25,6 +28,9 @@ public sealed class DefaultRunDependenciesFactory(IConfiguration configuration, 
         var sources = SourceWhitelist.LoadFromFile(Path.Combine(AppContext.BaseDirectory, "sources.json"));
         return new RunDependencies(source, llm.Client, sources, ledger);
     }
+
+    public GraphEngine.ILlmClient CreateLlm(JobbbySettings settings) =>
+        LlmClientFactory.Create(settings.Llm, configuration, httpClients.CreateClient("jobbby")).Client;
 }
 
 /// <summary>
