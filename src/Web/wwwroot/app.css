@@ -171,3 +171,7 @@ code { font-size: 0.875rem; background: var(--paper); padding: 0.05rem 0.3rem; b
 @media (prefers-reduced-motion: reduce) {
   * { scroll-behavior: auto !important; transition: none !important; }
 }
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.cv-upload .actions { align-items: center; }
+.cv-roles fieldset { max-width: 44rem; }

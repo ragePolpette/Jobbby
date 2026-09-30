@@ -210,7 +210,7 @@ async function renderRunPlan() {
       el("dt", { text: "Ricerche" }), el("dd", { text: `${queries}${settings.searches.deriveFromCv ? `, più fino a ${settings.searches.maxDerivedQueries} dal CV` : ""}` }),
       el("dt", { text: "Retribuzione minima" }), el("dd", { text: settings.salary.minimumYearly ? formatSalary(settings.salary.minimumYearly) : "nessuna" }),
       el("dt", { text: "LLM" }), el("dd", { text: `${settings.llm.provider}${settings.llm.model ? ` (${settings.llm.model})` : ""}` }),
-      el("dt", { text: "CV" }), el("dd", { text: cv.file || cv.message })));
+      el("dt", { text: "CV" }), el("dd", { text: cv.usedByRuns || "nessuno: caricalo dalla pagina CV" })));
   } catch (error) {
     notice(plan, error.message, "error");
   }
@@ -405,8 +405,7 @@ async function renderSettings() {
 
   form.onsubmit = async event => {
     event.preventDefault();
-    for (const node of form.querySelectorAll(".error")) node.textContent = "";
-    for (const node of form.querySelectorAll("[aria-invalid]")) node.removeAttribute("aria-invalid");
+    clearFieldErrors(form);
     const updated = {
       ...settings,
       searches: { queries: lines(value("searches.queries")), deriveFromCv: checked("searches.deriveFromCv"), maxDerivedQueries: numberOrNull(value("searches.maxDerivedQueries")) },
@@ -428,41 +427,222 @@ async function renderSettings() {
       settings = await api("PUT", "/api/settings", updated);
       notice(form, "Impostazioni salvate.", "success");
     } catch (error) {
-      const errors = (error.data && error.data.errors) || [];
-      const unmatched = [];
-      for (const { field: name, message } of errors) {
-        // Server paths may be deeper than the form ("searches.queries[0]", "remoteSweep.keywords.it").
-        const base = String(name || "").replace(/\[\d+\]$/, "");
-        const container = form.querySelector(`[data-field="${CSS.escape(base)}"]`)
-          || form.querySelector(`[data-field="${CSS.escape(base.split(".").slice(0, 2).join("."))}"]`);
-        if (container) {
-          container.querySelector(".error").textContent = message;
-          const input = container.querySelector("input, select, textarea");
-          input && input.setAttribute("aria-invalid", "true");
-        } else {
-          unmatched.push(message);
-        }
-      }
-      const summary = errors.length ? ["Controlla i campi evidenziati.", ...unmatched].join(" ") : error.message;
-      notice(form, summary, "error");
+      showFieldErrors(form, error);
     }
   };
 }
 loaders.settings = renderSettings;
 
-// ---------- CV page (read only until CV editing arrives)
+function clearFieldErrors(form) {
+  for (const node of form.querySelectorAll(".error")) node.textContent = "";
+  for (const node of form.querySelectorAll("[aria-invalid]")) node.removeAttribute("aria-invalid");
+}
+
+/** Server errors next to their fields; the ones matching no field go in the summary. */
+function showFieldErrors(form, error) {
+  const errors = (error.data && error.data.errors) || [];
+  const unmatched = [];
+  for (const { field: name, message } of errors) {
+    // Server paths may be deeper than the form ("searches.queries[0]", "remoteSweep.keywords.it").
+    const base = String(name || "").replace(/\[\d+\]$/, "");
+    const container = form.querySelector(`[data-field="${CSS.escape(base)}"]`)
+      || form.querySelector(`[data-field="${CSS.escape(base.split(".").slice(0, 2).join("."))}"]`);
+    if (container) {
+      container.querySelector(".error").textContent = message;
+      const input = container.querySelector("input, select, textarea");
+      input && input.setAttribute("aria-invalid", "true");
+    } else {
+      unmatched.push(message);
+    }
+  }
+  const summary = errors.length ? ["Controlla i campi evidenziati.", ...unmatched].join(" ") : error.message;
+  notice(form, summary, "error");
+}
+
+// ---------- CV page
+
+async function sendFile(url, file) {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch(url, { method: "POST", headers: { ...GUARD }, body });
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+  if (!response.ok) {
+    const error = new Error((data && data.error) || `Errore ${response.status}`);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+  return data;
+}
 
 async function renderCv() {
   const view = clear(document.getElementById("cv-view"));
   try {
-    const cv = await get("/api/cv");
-    view.append(cv.file
-      ? el("p", {}, "Le run usano ", el("code", { text: cv.file }), `, aggiornato il ${formatDate(cv.updatedAt)}.`)
-      : el("p", { text: cv.message }));
-    view.append(el("p", { class: "hint", text: "Il caricamento del CV e la modifica dei dati estratti arrivano con la prossima versione." }));
+    drawCv(view, await get("/api/cv"));
   } catch (error) {
     notice(view, error.message, "error");
   }
+}
+
+function drawCv(view, state, message) {
+  clear(view);
+
+  const status = el("div", { class: "cv-status" },
+    state.source
+      ? el("p", {}, "File caricato: ", el("code", { text: state.source }), state.updatedAt ? `, aggiornato il ${formatDate(state.updatedAt)}.` : ".")
+      : el("p", { text: "Nessun CV caricato." }),
+    state.usedByRuns ? el("p", { class: "hint" }, "Le run usano ", el("code", { text: state.usedByRuns }), ".") : null,
+    state.configuredPath
+      ? el("p", { class: "notice error", text: "Jobbby:CvPath è impostato: le run usano quel file e le modifiche fatte qui non hanno effetto finché non lo togli." })
+      : null,
+    (state.notes || []).map(note => el("p", { class: "hint", text: note })));
+  view.append(status);
+
+  const busy = el("span", { class: "hint", role: "status" });
+  const setBusy = text => {
+    busy.textContent = text || "";
+    for (const button of view.querySelectorAll("button")) button.disabled = Boolean(text);
+  };
+  const run = async (text, work, done) => {
+    setBusy(text);
+    try {
+      drawCv(view, await work(), done);
+    } catch (error) {
+      setBusy("");
+      notice(upload, error.message, "error");
+    }
+  };
+
+  const fileInput = el("input", { type: "file", id: "cv-file", accept: ".pdf,.json,application/pdf,application/json" });
+  const upload = el("section", { class: "cv-upload" },
+    el("h2", { text: "Carica il CV" }),
+    el("p", { class: "hint", text: "PDF o JSON, massimo 5 MB. Il PDF viene letto dall'LLM e i dati estratti compaiono qui sotto, da controllare e correggere. Il nuovo CV sostituisce quello attuale." }),
+    el("div", { class: "actions" },
+      el("label", { for: "cv-file", class: "visually-hidden", text: "File del CV" }),
+      fileInput,
+      el("button", {
+        type: "button", class: "primary", text: "Carica",
+        onclick: () => {
+          const file = fileInput.files[0];
+          if (!file) return notice(upload, "Scegli un file .pdf o .json.", "error");
+          if (file.size > 5 * 1024 * 1024) return notice(upload, "Il file supera il limite di 5 MB.", "error");
+          const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+          run(isPdf ? "Estrazione dei dati dal PDF in corso, può richiedere un minuto…" : "Caricamento…", () => sendFile("/api/cv", file), "CV caricato.");
+        },
+      }),
+      busy));
+  if (state.needsExtraction) {
+    upload.append(el("div", { class: "actions" },
+      el("button", { type: "button", text: "Estrai dal PDF", onclick: () => run("Estrazione dei dati dal PDF in corso, può richiedere un minuto…", () => api("POST", "/api/cv/extract", {}), "Dati estratti dal PDF.") }),
+      el("span", { class: "hint", text: "C'è un cv.pdf ma i suoi dati non sono ancora stati estratti: finché non lo fai, ogni run lo rilegge con l'LLM." })));
+  }
+  view.append(upload);
+
+  if (state.cv) {
+    view.append(cvForm(state.cv, next => drawCv(view, next, "CV salvato.")));
+    view.append(derivedQueriesSection());
+  }
+  if (message) notice(view, message, "success");
+}
+
+let roleCounter = 0;
+
+function roleFieldset(role) {
+  const n = ++roleCounter;
+  const set = el("fieldset", { class: "cv-role", "data-role": n },
+    el("legend", { text: "Ruolo" }),
+    field(`role${n}.title`, "Titolo", textInput(`role${n}.title`, role.title)),
+    field(`role${n}.company`, "Azienda", textInput(`role${n}.company`, role.company)),
+    field(`role${n}.skills`, "Competenze", textArea(`role${n}.skills`, (role.skills || []).join("\n")), "Una per riga."),
+    field(`role${n}.highlights`, "Risultati", textArea(`role${n}.highlights`, (role.highlights || []).join("\n")), "Uno per riga."));
+  set.append(el("div", { class: "actions" }, el("button", { type: "button", class: "danger", text: "Rimuovi ruolo", onclick: () => set.remove() })));
+  return set;
+}
+
+function cvForm(cv, onSaved) {
+  const form = el("form", { id: "cv-form", novalidate: true });
+  const value = id => document.getElementById(`f-${id}`).value;
+  const roles = el("div", { class: "cv-roles" }, (cv.roles || []).map(roleFieldset));
+
+  form.append(
+    el("h2", { text: "Dati del CV" }),
+    el("p", { class: "hint", text: "Sono i dati che le run confrontano con gli annunci. Correggi quello che l'estrazione ha letto male." }),
+    el("fieldset", {}, el("legend", { text: "Profilo" }),
+      field("name", "Nome", textInput("name", cv.name)),
+      field("location", "Località", textInput("location", cv.location), "Città di residenza. Se nelle Impostazioni la località di ricerca è vuota, le run cercano qui."),
+      field("seniority", "Seniority", textInput("seniority", cv.seniority)),
+      field("yearsExperience", "Anni di esperienza", numberInput("yearsExperience", cv.yearsExperience, { min: 0, max: 80, step: 0.5 })),
+      field("skills", "Competenze", textArea("skills", (cv.skills || []).join("\n")), "Una per riga."),
+      field("languages", "Lingue", textArea("languages", (cv.languages || []).join("\n")), "Una per riga.")),
+    el("h3", { text: "Esperienze" }),
+    roles,
+    el("div", { class: "actions" },
+      el("button", { type: "button", text: "Aggiungi ruolo", onclick: () => roles.append(roleFieldset({})) }),
+      el("button", { type: "submit", class: "primary", text: "Salva CV" })));
+
+  form.onsubmit = async event => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    const updated = {
+      name: value("name"),
+      location: value("location").trim() || null,
+      seniority: value("seniority"),
+      yearsExperience: numberOrNull(value("yearsExperience")),
+      skills: lines(value("skills")),
+      languages: lines(value("languages")),
+      roles: [...roles.querySelectorAll("fieldset.cv-role")].map(set => {
+        const n = set.getAttribute("data-role");
+        return {
+          title: value(`role${n}.title`),
+          company: value(`role${n}.company`),
+          skills: lines(value(`role${n}.skills`)),
+          highlights: lines(value(`role${n}.highlights`)),
+        };
+      }),
+    };
+    try {
+      onSaved(await api("PUT", "/api/cv", updated));
+    } catch (error) {
+      showFieldErrors(form, error);
+    }
+  };
+  return form;
+}
+
+function derivedQueriesSection() {
+  const result = el("div");
+  const list = (label, queries) => el("div", {},
+    el("h3", { text: label }),
+    queries.length ? el("ul", {}, queries.map(query => el("li", { text: query }))) : el("p", { class: "hint", text: "Nessuna." }));
+  const button = el("button", { type: "button", text: "Mostra ricerche derivate" });
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    clear(result).append(el("p", { class: "hint", role: "status", text: "Chiedo all'LLM…" }));
+    try {
+      const data = await api("POST", "/api/cv/derived-queries", {});
+      clear(result).append(
+        data.enabled ? null : el("p", { class: "hint", text: "Le ricerche dal CV sono spente nelle Impostazioni: le run usano solo quelle configurate." }),
+        data.error ? el("p", { class: "notice error", text: data.error }) : null,
+        list("Configurate nelle Impostazioni", data.configured),
+        data.enabled ? list("Ricavate dal CV", data.derived) : null);
+    } catch (error) {
+      clear(result);
+      notice(result, error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+  return el("section", { class: "cv-queries" },
+    el("h2", { text: "Ricerche derivate" }),
+    el("p", { class: "hint", text: "Anteprima delle ricerche che una run aggiungerebbe a quelle configurate, con il CV salvato. Ogni anteprima è una chiamata all'LLM: la run ne fa una nuova e può ottenere ricerche un po' diverse." }),
+    el("div", { class: "actions" }, button),
+    result);
 }
 loaders.cv = renderCv;
 
