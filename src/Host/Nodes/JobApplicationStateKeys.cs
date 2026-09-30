@@ -6,4 +6,6 @@ public static class JobApplicationStateKeys
     public const string Company = "Company";
     public const string Title = "Title";
     public const string SourceUrl = "SourceUrl";
+    public const string RunId = "RunId";
+    public const string SourceName = "SourceName";
 }

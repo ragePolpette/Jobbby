@@ -34,12 +34,13 @@ public static class HostGraph
         TimeSpan? approvalTimeout = null,
         double confidenceThreshold = 0.7,
         bool dryRun = false,
-        StageOneCriteria? stageOneCriteria = null)
+        StageOneCriteria? stageOneCriteria = null,
+        IEnumerable<string>? extraCompanySuffixes = null)
     {
         var definition = new GraphDefinition(maxSteps);
 
         definition.RegisterNode(NormalizeJobPostingNodeName, new NormalizeJobPostingNode(llmClient));
-        definition.RegisterNode(DedupeCheckNodeName, new DedupeCheckNode(ledger, statsCollector));
+        definition.RegisterNode(DedupeCheckNodeName, new DedupeCheckNode(ledger, statsCollector, extraCompanySuffixes));
         definition.RegisterNode(ScoreMatchNodeName, new ScoreMatchNode(candidateCv, new MatchStageTwoJudge(llmClient), statsCollector, stageOneCriteria));
         definition.RegisterEdge(NormalizeJobPostingNodeName, _ => DedupeCheckNodeName);
         definition.RegisterEdge(DedupeCheckNodeName, state =>

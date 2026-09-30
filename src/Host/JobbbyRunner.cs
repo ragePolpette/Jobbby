@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ApplicationLedger;
 using Config;
 using CvExtraction;
 using GraphEngine;
@@ -25,7 +26,7 @@ public sealed record RunEvent(string Kind, string Message, DateTimeOffset At);
 public sealed record RunDependencies(IJobSource JobSource, ILlmClient Llm, IReadOnlyList<SourceDefinition> Sources);
 
 /// <param name="Area">The area actually searched (settings plus the CV location when enabled).</param>
-public sealed record RunSummary(RunReport Report, int AdzunaCalls, IReadOnlyList<string> Warnings, bool Cancelled, DryRunLog? DryRunLog, AreaSettings Area);
+public sealed record RunSummary(string RunId, RunReport Report, int AdzunaCalls, IReadOnlyList<string> Warnings, bool Cancelled, DryRunLog? DryRunLog, AreaSettings Area);
 
 /// <summary>
 /// One complete Jobbby run, driven only by <see cref="JobbbySettings"/> and the CV: plan the
@@ -77,6 +78,7 @@ public sealed class JobbbyRunner
             Warn(warning);
 
         var runAt = DateTimeOffset.UtcNow;
+        var runId = $"{runAt:yyyyMMdd-HHmmss}-{(mode == RunMode.Dry ? "dry" : "run")}-{Guid.NewGuid():N}"[..28];
         Report("started", mode == RunMode.Dry ? "Dry run avviata" : "Run avviata");
 
         SearchPlan plan;
@@ -96,7 +98,7 @@ public sealed class JobbbyRunner
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             Report("cancelled", "Run interrotta durante la preparazione delle ricerche.");
-            return new RunSummary(new RunStatsCollector().BuildReport(runAt), 0, warnings, Cancelled: true, dryRunLog, area);
+            return new RunSummary(runId, new RunStatsCollector().BuildReport(runAt), 0, warnings, Cancelled: true, dryRunLog, area);
         }
 
         if (plan.DerivationError is not null)
@@ -109,7 +111,10 @@ public sealed class JobbbyRunner
         var ledgerPath = mode == RunMode.Dry
             ? Path.Combine(Path.GetTempPath(), $"jobbby-dry-run-{Guid.NewGuid():N}.json")
             : _dataDir.ApplicationsPath;
-        var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
+        var suffixes = settings.Dedupe.ExtraCompanySuffixes;
+        var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath, suffixes);
+        // Dry runs dedupe against the real history without ever writing it.
+        var history = mode == RunMode.Dry ? new ApplicationLedger.ApplicationLedger(_dataDir.ApplicationsPath, suffixes) : ledger;
         var stats = new RunStatsCollector();
         // No approval channel: postings below the threshold are recorded as Pending and wait for the user.
         var definition = HostGraph.Build(
@@ -121,7 +126,8 @@ public sealed class JobbbyRunner
             stats,
             confidenceThreshold: settings.Evaluation.AutoApproveThreshold,
             dryRun: mode == RunMode.Dry,
-            stageOneCriteria: StageOneCriteria.FromSettings(area, settings.Salary, skillAliases));
+            stageOneCriteria: StageOneCriteria.FromSettings(area, settings.Salary, skillAliases),
+            extraCompanySuffixes: suffixes);
         var remoteFilter = new RemoteKeywordFilter(settings.RemoteSweep.AllKeywords());
         if (area.AcceptsRemote && remoteFilter.IsEmpty && !string.IsNullOrWhiteSpace(area.Where))
             Warn("Remoto accettato ma nessuna parola chiave configurata: la ricerca remota fuori zona è disattivata.");
@@ -158,8 +164,23 @@ public sealed class JobbbyRunner
                 }
 
                 stats.IncrementTotalFetched(fetch.Postings.Count);
-                await Task.WhenAll(fetch.Postings.Select(posting =>
-                    EvaluateAsync(definition, source, posting, stats, dryRunLog, Report, cancellationToken))).ConfigureAwait(false);
+                // Already decided in an earlier run: skip before normalization, which costs an LLM call.
+                var fresh = new List<RawPosting>();
+                foreach (var posting in fetch.Postings)
+                {
+                    if (!string.IsNullOrWhiteSpace(posting.Company) && history.HasBeenProcessed(PostingIdentity.Key(posting.Company, posting.RawTitle, suffixes)))
+                    {
+                        stats.IncrementSkippedDuplicate();
+                        Report("evaluated", $"[{source.Name}] {posting.RawTitle}: già visto in una run precedente");
+                    }
+                    else
+                    {
+                        fresh.Add(posting);
+                    }
+                }
+
+                await Task.WhenAll(fresh.Select(posting =>
+                    EvaluateAsync(definition, source, runId, posting, stats, dryRunLog, Report, cancellationToken))).ConfigureAwait(false);
                 newCursors.AddRange(fetch.Queries.Where(query => query.Cursor is not null).Select(query => query.Cursor!));
             }
         }
@@ -177,7 +198,7 @@ public sealed class JobbbyRunner
         if (cancelled)
         {
             Report("cancelled", "Run interrotta: cursori e riepilogo non salvati.");
-            return new RunSummary(report, adzunaCalls, warnings, Cancelled: true, dryRunLog, area);
+            return new RunSummary(runId, report, adzunaCalls, warnings, Cancelled: true, dryRunLog, area);
         }
 
         if (mode == RunMode.Normal)
@@ -194,12 +215,13 @@ public sealed class JobbbyRunner
         }
 
         Report("completed", RunSummaryText.Build(report));
-        return new RunSummary(report, adzunaCalls, warnings, Cancelled: false, dryRunLog, area);
+        return new RunSummary(runId, report, adzunaCalls, warnings, Cancelled: false, dryRunLog, area);
     }
 
     private static async Task EvaluateAsync(
         GraphDefinition definition,
         SourceDefinition source,
+        string runId,
         RawPosting rawPosting,
         RunStatsCollector stats,
         DryRunLog? dryRunLog,
@@ -209,7 +231,9 @@ public sealed class JobbbyRunner
         var state = new GraphState(new Dictionary<string, object>
         {
             [NormalizeJobPostingNode.RawPostingStateKey] = rawPosting,
-            [JobApplicationStateKeys.SourceUrl] = source.BaseUrl,
+            [JobApplicationStateKeys.SourceUrl] = rawPosting.ApplyUrl,
+            [JobApplicationStateKeys.SourceName] = source.Name,
+            [JobApplicationStateKeys.RunId] = runId,
         });
 
         try

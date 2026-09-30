@@ -3,37 +3,36 @@ using System.Text.Json;
 namespace ApplicationLedger;
 
 /// <summary>
-/// Tracks every job posting that has already reached a terminal outcome - applied,
-/// rejected by a human, or timed out - persisted to a single JSON file. Loads existing
-/// records on construction; every <see cref="RecordApplied"/> call rewrites the whole
-/// file - no incremental append, the expected volume is low enough that this is simpler
-/// and safer than maintaining a partial-write log.
+/// Every outcome of every posting, persisted to a single JSON file and rewritten atomically
+/// on each change (the expected volume is low). Records are appended, never edited: a
+/// posting's current state is its latest record, its history is all of them. On load, keys
+/// written by older versions are recomputed with <see cref="PostingIdentity"/>, so dedupe
+/// keeps working across the upgrade. One instance per process: it holds the file in memory.
 /// </summary>
 public sealed class ApplicationLedger
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     private readonly string _filePath;
     private readonly List<ApplicationRecord> _records;
     private readonly object _lock = new();
 
-    public ApplicationLedger(string filePath)
+    public ApplicationLedger(string filePath, IEnumerable<string>? extraCompanySuffixes = null)
     {
         _filePath = filePath;
-        _records = File.Exists(filePath)
+        var suffixes = extraCompanySuffixes?.ToList();
+        var stored = File.Exists(filePath)
             ? JsonSerializer.Deserialize<List<ApplicationRecord>>(File.ReadAllText(filePath)) ?? new List<ApplicationRecord>()
             : new List<ApplicationRecord>();
+        _records = stored.Select(record => Rekey(record, suffixes)).ToList();
     }
 
-    /// <summary>
-    /// True if this dedupe key has already reached ANY terminal outcome - applied,
-    /// rejected, or timed out - not just a successful application. Renamed from the
-    /// original HasApplied, which became misleading once rejections and timeouts started
-    /// being recorded too.
-    /// </summary>
+    /// <summary>True if the posting's key has any outcome that keeps it from being proposed again.</summary>
     public bool HasBeenProcessed(string dedupeKey)
     {
         lock (_lock)
@@ -47,21 +46,49 @@ public sealed class ApplicationLedger
     {
         lock (_lock)
         {
-            return _records.LastOrDefault(r => (r.PostingId ?? PostingIdentity.Id(r.DedupeKey)) == postingId);
+            return _records.Where(r => r.PostingId == postingId).OrderBy(r => r.RecordedAt).LastOrDefault();
+        }
+    }
+
+    /// <summary>Every record of the posting, oldest first.</summary>
+    public IReadOnlyList<ApplicationRecord> History(string postingId)
+    {
+        lock (_lock)
+        {
+            return _records.Where(r => r.PostingId == postingId).OrderBy(r => r.RecordedAt).ToList();
+        }
+    }
+
+    /// <summary>Postings whose current state is Pending, most recent first.</summary>
+    public IReadOnlyList<ApplicationRecord> Pending()
+    {
+        lock (_lock)
+        {
+            return _records
+                .GroupBy(r => r.PostingId)
+                .Select(group => group.OrderBy(r => r.RecordedAt).Last())
+                .Where(r => r.Outcome == ApplicationOutcomes.Pending)
+                .OrderByDescending(r => r.RecordedAt)
+                .ToList();
         }
     }
 
     /// <summary>
-    /// Records a terminal outcome and rewrites the file. Guarded by a lock because a
-    /// single ledger instance can be shared across concurrent <c>GraphRun</c>s (e.g. one
-    /// per source), each potentially recording around the same time.
+    /// Records an outcome and rewrites the file. Guarded by a lock because a single ledger
+    /// instance is shared across concurrent <c>GraphRun</c>s.
     /// </summary>
     public void RecordOutcome(ApplicationRecord record)
     {
         lock (_lock)
         {
-            _records.Add(record);
+            _records.Add(record.PostingId is null ? record with { PostingId = PostingIdentity.Id(record.DedupeKey) } : record);
             Config.AtomicFile.WriteAllText(_filePath, JsonSerializer.Serialize(_records, SerializerOptions));
         }
+    }
+
+    private static ApplicationRecord Rekey(ApplicationRecord record, IReadOnlyList<string>? suffixes)
+    {
+        var key = PostingIdentity.Key(record.Company, record.Title, suffixes);
+        return record with { DedupeKey = key, PostingId = PostingIdentity.Id(key) };
     }
 }

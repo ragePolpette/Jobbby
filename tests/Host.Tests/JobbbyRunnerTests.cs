@@ -63,6 +63,45 @@ public class JobbbyRunnerTests
     }
 
     [Fact]
+    public async Task NormalRun_RecordsTheFullPostingInTheLedger()
+    {
+        using var tmp = new TempDir();
+        var dataDir = new DataDir(tmp.Root);
+        var runner = new JobbbyRunner(dataDir, Deps(new MockJobSource(_ => new[] { Posting("Nurse", "https://x/1") })));
+
+        var summary = await runner.RunAsync(Settings(), Cv(), RunMode.Normal, new Progress<RunEvent>(), CancellationToken.None);
+
+        var record = new ApplicationLedger.ApplicationLedger(dataDir.ApplicationsPath).Pending().Single();
+        Assert.Equal(summary.RunId, record.RunId);
+        Assert.Equal("Adzuna", record.SourceName);
+        Assert.Equal("https://x/1", record.ApplyUrl);
+        Assert.Equal("https://x/1", record.SourceUrl);
+        Assert.Equal("Reparto di pronto soccorso", record.Excerpt);
+        Assert.Equal(new[] { "Triage" }, record.RequiredSkills!);
+        Assert.Equal("Borderline", record.Category);
+        Assert.Equal(0.5, record.Confidence);
+        Assert.Equal("r", record.Reasoning);
+        Assert.Equal("Onsite", record.WorkMode);
+    }
+
+    [Fact]
+    public async Task NormalRun_PostingAlreadyInTheLedger_IsSkippedBeforeAnyLlmCall()
+    {
+        using var tmp = new TempDir();
+        var dataDir = new DataDir(tmp.Root);
+        var key = ApplicationLedger.PostingIdentity.Key("Clinic", "Nurse");
+        new ApplicationLedger.ApplicationLedger(dataDir.ApplicationsPath).RecordOutcome(
+            new ApplicationLedger.ApplicationRecord(key, "Clinic", "Nurse", null, DateTimeOffset.UtcNow, ApplicationLedger.ApplicationOutcomes.Rejected));
+        var llm = new PromptRoutedLlm();
+        var runner = new JobbbyRunner(dataDir, Deps(new MockJobSource(_ => new[] { Posting("Nurse", "https://x/2") }), llm));
+
+        var summary = await runner.RunAsync(Settings(), Cv(), RunMode.Normal, new Progress<RunEvent>(), CancellationToken.None);
+
+        Assert.Equal(0, llm.Calls);
+        Assert.Equal(1, summary.Report.SkippedDuplicate);
+    }
+
+    [Fact]
     public async Task NormalRun_RecordsPendingWithoutAnyApprovalChannel()
     {
         using var tmp = new TempDir();
