@@ -61,4 +61,8 @@ public sealed record CvData
 
     [JsonPropertyName("languages")]
     public List<string> Languages { get; init; } = new();
+
+    /// <summary>Where the candidate lives (city, as written in the CV); the default search area.</summary>
+    [JsonPropertyName("location")]
+    public string? Location { get; init; }
 }

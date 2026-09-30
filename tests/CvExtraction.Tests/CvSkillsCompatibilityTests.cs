@@ -21,6 +21,23 @@ public class CvSkillsCompatibilityTests
     }
 
     [Fact]
+    public async Task Cv_ReadsLocation()
+    {
+        using var dir = new TempDir();
+        File.WriteAllText(dir.Path("cv.json"), """{"name":"A","location":"Bologna"}""");
+
+        var cv = await CvLoader.LoadAsync(dir.Path("cv.json"), new MockLlmClient());
+
+        Assert.Equal("Bologna", cv.Location);
+    }
+
+    [Fact]
+    public void ExtractionPrompt_AsksForTheCandidateLocation()
+    {
+        Assert.Contains("\"location\"", CvExtractionPrompt.Build("text"));
+    }
+
+    [Fact]
     public void Role_SerializesAsSkills()
     {
         var json = System.Text.Json.JsonSerializer.Serialize(new CvRole { Skills = new() { "Triage" } });

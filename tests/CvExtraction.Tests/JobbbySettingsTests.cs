@@ -72,10 +72,10 @@ public class JobbbySettingsTests
     }
 
     [Fact]
-    public void Validate_DistanceWithoutWhere_IsAnError()
+    public void Validate_DistanceWithoutWhere_IsAnError_WhenNotTakenFromCv()
     {
         var d = JobbbySettings.Default;
-        var s = d with { Area = d.Area with { Country = "de", DistanceKm = 20 } };
+        var s = d with { Area = d.Area with { Country = "de", DistanceKm = 20, WhereFromCv = false } };
 
         Assert.Contains(SettingsValidator.Validate(s, forRun: false), e => e.Field == "area.distanceKm");
     }
