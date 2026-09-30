@@ -15,6 +15,10 @@ public static class ApplicationOutcomes
     /// <summary>Discarded by stage one or a Weak judgment, as opposed to a human rejection.</summary>
     public const string AutoRejected = "AutoRejected";
 
+    /// <summary>Outcomes set by the user: a re-evaluation never overrides them.</summary>
+    public static bool IsUserDecision(string outcome) =>
+        outcome is Approved or Rejected or Applied;
+
     /// <summary>Every outcome that keeps a posting from being proposed again as new.</summary>
     public static bool IsTerminal(string outcome) =>
         outcome is Rejected or Shortlisted or Approved or Applied or Pending or AutoRejected;

@@ -36,7 +36,7 @@ public sealed class RecordOutcomeNode : INode
 
     public Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default)
     {
-        var (outcome, reason) = Decide(state);
+        var (outcome, reason) = Decide(state, _autoApproveThreshold);
         switch (outcome)
         {
             case ApplicationOutcomes.AutoRejected: _statsCollector.IncrementAutoRejected(); break;
@@ -56,7 +56,8 @@ public sealed class RecordOutcomeNode : INode
         }));
     }
 
-    private (string Outcome, string Reason) Decide(GraphState state)
+    /// <summary>The outcome rules, shared with the re-evaluation of a pasted full text.</summary>
+    public static (string Outcome, string Reason) Decide(GraphState state, double autoApproveThreshold)
     {
         if (!state.Get<bool>(ScoreMatchNode.StageOnePassedStateKey))
             return (ApplicationOutcomes.AutoRejected, state.Get<string>(ScoreMatchNode.StageOneReasonStateKey) ?? "Filtro stage 1 non superato.");
@@ -69,8 +70,8 @@ public sealed class RecordOutcomeNode : INode
             return (ApplicationOutcomes.AutoRejected, "Giudizio: corrispondenza debole.");
 
         var confidence = state.Get<double>(ScoreMatchNode.MatchConfidenceStateKey);
-        return confidence >= _autoApproveThreshold
+        return confidence >= autoApproveThreshold
             ? (ApplicationOutcomes.Shortlisted, $"Selezionato automaticamente (confidenza {confidence:0.00}).")
-            : (ApplicationOutcomes.Pending, $"Da decidere (confidenza {confidence:0.00} sotto la soglia {_autoApproveThreshold:0.00}).");
+            : (ApplicationOutcomes.Pending, $"Da decidere (confidenza {confidence:0.00} sotto la soglia {autoApproveThreshold:0.00}).");
     }
 }
