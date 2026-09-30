@@ -38,14 +38,14 @@ public class AdzunaJobSourceTests
         var jobSource = new AdzunaJobSource(httpClient, "test-id", "test-key");
         var source = new SourceDefinition
         {
-            Name = "sviluppatore backend",
+            Name = "Adzuna",
             BaseUrl = "https://api.adzuna.com",
             Type = "api",
             RequiresAuth = true,
             AuthSecretKey = "Adzuna:AppKey",
         };
 
-        var postings = await jobSource.FetchAsync(source);
+        var postings = await jobSource.FetchAsync(source, "sviluppatore backend");
 
         Assert.Equal(2, postings.Count);
 
@@ -63,7 +63,7 @@ public class AdzunaJobSourceTests
     }
 
     [Fact]
-    public async Task FetchAsync_SendsAppCredentialsAndSourceNameAsWhatQuery()
+    public async Task FetchAsync_SendsAppCredentialsAndQueryAsWhat()
     {
         HttpRequestMessage? capturedRequest = null;
 
@@ -80,20 +80,20 @@ public class AdzunaJobSourceTests
         var jobSource = new AdzunaJobSource(httpClient, "my-app-id", "my-app-key");
         var source = new SourceDefinition
         {
-            Name = "sviluppatore backend",
+            Name = "Adzuna",
             BaseUrl = "https://api.adzuna.com",
             Type = "api",
             RequiresAuth = true,
             AuthSecretKey = "Adzuna:AppKey",
         };
 
-        await jobSource.FetchAsync(source);
+        await jobSource.FetchAsync(source, "sviluppatore backend");
 
         Assert.NotNull(capturedRequest);
         var query = capturedRequest!.RequestUri!.Query;
         Assert.Contains("app_id=my-app-id", query);
         Assert.Contains("app_key=my-app-key", query);
-        Assert.Contains("what=sviluppatore", query); // Uri-escaped source.Name
+        Assert.Contains("what=sviluppatore", query); // Uri-escaped query
         Assert.Contains("results_per_page=10", query); // default cap
         Assert.Contains("sort_by=date", query); // newest first
         Assert.StartsWith("https://api.adzuna.com/v1/api/jobs/it/search/1", capturedRequest.RequestUri!.ToString());
@@ -117,7 +117,7 @@ public class AdzunaJobSourceTests
         var jobSource = new AdzunaJobSource(httpClient, "id", "key", resultsPerPage: 3);
         var source = new SourceDefinition { Name = "x", BaseUrl = "https://api.adzuna.com", Type = "api", RequiresAuth = false, AuthSecretKey = null };
 
-        await jobSource.FetchAsync(source);
+        await jobSource.FetchAsync(source, "sviluppatore backend");
 
         Assert.Contains("results_per_page=3", capturedRequest!.RequestUri!.Query);
     }
@@ -134,7 +134,7 @@ public class AdzunaJobSourceTests
         var jobSource = new AdzunaJobSource(httpClient, "id", "key");
         var source = new SourceDefinition { Name = "x", BaseUrl = "https://api.adzuna.com", Type = "api", RequiresAuth = false, AuthSecretKey = null };
 
-        var postings = await jobSource.FetchAsync(source);
+        var postings = await jobSource.FetchAsync(source, "sviluppatore backend");
 
         Assert.Empty(postings);
     }

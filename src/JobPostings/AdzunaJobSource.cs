@@ -55,13 +55,11 @@ public sealed class AdzunaJobSource : IJobSource
     }
 
     public async Task<IReadOnlyList<RawPosting>> FetchAsync(
-        SourceDefinition source, SourceCursor? cursor = null, CancellationToken cancellationToken = default)
+        SourceDefinition source, string query, SourceCursor? cursor = null, CancellationToken cancellationToken = default)
     {
-        // SourceDefinition has no dedicated search-query field, so a whitelist entry's
-        // Name doubles as the Adzuna "what" keyword - configurable per source.
         // sort_by=date asks Adzuna itself to order results newest-first.
         var url = $"{SearchEndpoint}?app_id={Uri.EscapeDataString(_appId)}&app_key={Uri.EscapeDataString(_appKey)}" +
-                  $"&what={Uri.EscapeDataString(source.Name)}&results_per_page={_resultsPerPage}&sort_by=date&content-type=application/json";
+                  $"&what={Uri.EscapeDataString(query)}&results_per_page={_resultsPerPage}&sort_by=date&content-type=application/json";
 
         if (cursor is not null)
         {

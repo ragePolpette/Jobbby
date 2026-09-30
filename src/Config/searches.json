@@ -1,0 +1,8 @@
+{
+  "queries": [
+    ".NET developer",
+    "AI engineer"
+  ],
+  "deriveFromCv": true,
+  "maxDerivedQueries": 3
+}
