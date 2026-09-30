@@ -71,6 +71,7 @@ public sealed class JobbbyRunner
         if (_discoveryConfigured)
             Warn("Discovery configurata ma non eseguita: non fa parte delle run.");
 
+        var skillAliases = SkillAliases.Load(_dataDir.SkillAliasesPath);
         var resolved = AreaResolver.Resolve(settings.Area, cv);
         var area = resolved.Area;
         foreach (var note in resolved.Notes)
@@ -124,7 +125,7 @@ public sealed class JobbbyRunner
             stats,
             confidenceThreshold: settings.Evaluation.AutoApproveThreshold,
             dryRun: mode == RunMode.Dry,
-            stageOneCriteria: StageOneCriteria.FromSettings(area, settings.Salary, SkillAliases.Load(_dataDir.SkillAliasesPath)));
+            stageOneCriteria: StageOneCriteria.FromSettings(area, settings.Salary, skillAliases));
         var remoteFilter = new RemoteKeywordFilter(settings.RemoteSweep.AllKeywords());
         if (area.AcceptsRemote && remoteFilter.IsEmpty && !string.IsNullOrWhiteSpace(area.Where))
             Warn("Remoto accettato ma nessuna parola chiave configurata: la ricerca remota fuori zona è disattivata.");
@@ -146,6 +147,9 @@ public sealed class JobbbyRunner
                     _deps.JobSource, source, plan.Queries, country, area, remoteFilter, cursors,
                     mode == RunMode.Dry ? settings.DryRun.MaxPostingsPerQuery : null, runAt, cancellationToken).ConfigureAwait(false);
                 adzunaCalls += fetch.AdzunaCalls;
+                var localQueries = fetch.Queries.Where(query => query.Sweep == JobPostings.SearchSweep.Local).ToList();
+                if (resolved.FromCv && localQueries.Count > 0 && localQueries.All(query => query.Error is null && query.Returned == 0))
+                    Warn($"La zona presa dal CV (\"{area.Where}\") non ha dato risultati su {source.Name}: controlla la località del CV o imposta area.where.");
 
                 foreach (var query in fetch.Queries)
                 {

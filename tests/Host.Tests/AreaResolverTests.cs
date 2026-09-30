@@ -26,6 +26,37 @@ public class AreaResolverTests
         Assert.Equal(expected.Length == 0 ? null : 20, resolved.Area.DistanceKm);
     }
 
+    [Theory]
+    [InlineData("Bologna (BO)", "Bologna")]
+    [InlineData("Via Roma 1, 40100 Bologna", "Bologna")]
+    [InlineData("Bologna, Emilia-Romagna", "Bologna")]
+    [InlineData("Bologna\n", "Bologna")]
+    [InlineData("  Reggio   nell'Emilia ", "Reggio nell'Emilia")]
+    [InlineData("50667 Köln, Deutschland", "Köln")]
+    [InlineData("12345", "")]
+    public void Resolve_CvLocation_IsReducedToAPlaceName(string cvLocation, string expected)
+    {
+        var resolved = AreaResolver.Resolve(new AreaSettings { Country = "it", WhereFromCv = true }, CvIn(cvLocation));
+
+        Assert.Equal(expected, resolved.Area.Where);
+        Assert.Equal(expected.Length > 0, resolved.FromCv);
+    }
+
+    [Fact]
+    public async Task Runner_CvAreaWithNoLocalResults_Warns()
+    {
+        using var tmp = new TempDir();
+        var source = new MockJobSource(_ => Array.Empty<RawPosting>());
+        var runner = new JobbbyRunner(new DataDir(tmp.Root),
+            new RunDependencies(source, new MockLlmNoop(), null, new[] { new SourceDefinition { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" } }));
+        var d = JobbbySettings.Default;
+        var settings = d with { Area = d.Area with { Country = "it" }, Searches = d.Searches with { Queries = new() { "q" }, DeriveFromCv = false } };
+
+        var summary = await runner.RunAsync(settings, new CvData { Name = "A", Location = "Atlantide" }, RunMode.Dry, new Progress<RunEvent>(), CancellationToken.None);
+
+        Assert.Contains(summary.Warnings, w => w.Contains("Atlantide") && w.Contains("area.where"));
+    }
+
     [Fact]
     public void Resolve_DistanceWithoutAnyArea_IsDroppedWithWarning()
     {

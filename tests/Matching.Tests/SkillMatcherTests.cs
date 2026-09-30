@@ -27,9 +27,7 @@ public class SkillMatcherTests
 
     [Theory]
     [InlineData(".NET Core", ".NET")]
-    [InlineData(".NET", ".NET Core")]
     [InlineData(".NET 8", ".NET")]
-    [InlineData("Entity Framework", "Entity Framework Core")]
     [InlineData("SQL Server", "SQL")]
     [InlineData("Triage infermieristico", "Triage")]
     [InlineData("  Contabilità   generale ", "contabilità generale")]
@@ -37,6 +35,17 @@ public class SkillMatcherTests
     public void Covers_GenericRules_WithoutAnyAlias(string candidateSkill, string requiredSkill)
     {
         Assert.True(new SkillMatcher(new[] { candidateSkill }).Covers(requiredSkill));
+    }
+
+    [Theory]
+    [InlineData("Gestione", "Gestione magazzino")]
+    [InlineData("Excel", "Excel VBA")]
+    [InlineData("Entity Framework", "Entity Framework Core")]
+    [InlineData(".NET", ".NET Core")]
+    public void DoesNotCover_SpecificRequirement_WithAGenericSkill(string candidateSkill, string requiredSkill)
+    {
+        // Only "X Y" covers "X": a generic skill must not satisfy a specific (possibly must-have) requirement.
+        Assert.False(new SkillMatcher(new[] { candidateSkill }).Covers(requiredSkill));
     }
 
     [Theory]

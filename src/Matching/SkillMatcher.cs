@@ -8,7 +8,7 @@ namespace Matching;
 /// name the same skill differently, so exact string equality rejects good matches. Built-in
 /// rules are profession-neutral: case, spacing and a trailing version number are ignored,
 /// and a more specific variant covers the generic skill ("Triage infermieristico" covers
-/// "Triage", ".NET Core" covers ".NET"). Anything profession-specific ("csharp" = "C#",
+/// "Triage", ".NET Core" covers ".NET") but not the other way round. Anything profession-specific ("csharp" = "C#",
 /// "ASP.NET Core" implies ".NET") comes from <see cref="SkillAliases"/>, i.e. from the
 /// user's data. A coarse stage-one check: it errs toward matching, stage two's LLM
 /// judgment does the fine-grained comparison.
@@ -44,10 +44,10 @@ public sealed class SkillMatcher
         if (required.Length == 0)
             return false;
 
+        // "X Y" covers "X", never the reverse: a generic skill must not satisfy a specific requirement.
         return _candidateSkills.Any(candidate =>
             candidate == required ||
-            candidate.StartsWith(required + " ", StringComparison.Ordinal) ||
-            required.StartsWith(candidate + " ", StringComparison.Ordinal));
+            candidate.StartsWith(required + " ", StringComparison.Ordinal));
     }
 
     private string Normalize(string skill)
