@@ -26,9 +26,11 @@ public sealed class ScoreMatchNode : INode
     private readonly CvData _candidateCv;
     private readonly MatchStageTwoJudge _stageTwoJudge;
     private readonly RunStatsCollector _statsCollector;
+    private readonly StageOneCriteria _criteria;
 
-    public ScoreMatchNode(CvData candidateCv, MatchStageTwoJudge stageTwoJudge, RunStatsCollector statsCollector)
+    public ScoreMatchNode(CvData candidateCv, MatchStageTwoJudge stageTwoJudge, RunStatsCollector statsCollector, StageOneCriteria? criteria = null)
     {
+        _criteria = criteria ?? StageOneCriteria.None;
         _candidateCv = candidateCv;
         _stageTwoJudge = stageTwoJudge;
         _statsCollector = statsCollector;
@@ -39,7 +41,7 @@ public sealed class ScoreMatchNode : INode
         var jobPosting = state.Get<JobPosting>(NormalizeJobPostingNode.JobPostingStateKey)
             ?? throw new InvalidOperationException($"No JobPosting found in state under '{NormalizeJobPostingNode.JobPostingStateKey}'.");
 
-        var stageOne = MatchStageOneFilter.Evaluate(jobPosting, _candidateCv);
+        var stageOne = MatchStageOneFilter.Evaluate(jobPosting, _candidateCv, _criteria);
         var stageOnePassed = stageOne.Passes;
         var stageOneReason = stageOne.Reason;
 

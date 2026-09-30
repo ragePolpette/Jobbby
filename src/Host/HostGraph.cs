@@ -32,13 +32,14 @@ public static class HostGraph
         int maxSteps = 10,
         TimeSpan? approvalTimeout = null,
         double confidenceThreshold = 0.7,
-        bool dryRun = false)
+        bool dryRun = false,
+        StageOneCriteria? stageOneCriteria = null)
     {
         var definition = new GraphDefinition(maxSteps);
 
         definition.RegisterNode(NormalizeJobPostingNodeName, new NormalizeJobPostingNode(llmClient));
         definition.RegisterNode(DedupeCheckNodeName, new DedupeCheckNode(ledger, statsCollector));
-        definition.RegisterNode(ScoreMatchNodeName, new ScoreMatchNode(candidateCv, new MatchStageTwoJudge(llmClient), statsCollector));
+        definition.RegisterNode(ScoreMatchNodeName, new ScoreMatchNode(candidateCv, new MatchStageTwoJudge(llmClient), statsCollector, stageOneCriteria));
         definition.RegisterNode(AskApprovalNodeName, new AskApprovalNode(gateway, registry, approvalTimeout));
         definition.RegisterNode(RecordIfApprovedNodeName, new RecordIfApprovedNode(ledger, statsCollector));
 

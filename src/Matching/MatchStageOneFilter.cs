@@ -10,9 +10,14 @@ public sealed record MatchStageOneResult(bool Passes, string Reason)
     public List<string> PreferenceWarnings { get; init; } = new();
 }
 
+/// <summary>
+/// Cheap, LLM-free first gate. Skills and languages come from the CV; area, remote and
+/// salary from <see cref="StageOneCriteria"/>. Unknown information never excludes a posting:
+/// only a stated requirement the candidate does not meet does.
+/// </summary>
 public static class MatchStageOneFilter
 {
-    public static MatchStageOneResult Evaluate(JobPosting posting, CvData cv)
+    public static MatchStageOneResult Evaluate(JobPosting posting, CvData cv, StageOneCriteria criteria)
     {
         var candidateStack = new SkillMatcher(BuildCandidateStack(cv));
         var requiredStack = posting.RequiredStack ?? new List<string>();
@@ -23,26 +28,19 @@ public static class MatchStageOneFilter
         var warnings = preferredStack.Where(skill => !candidateStack.Covers(skill)).Select(skill => $"Competenza preferenziale non presente: {skill}").ToList();
 
         if (requiredStack.Count > 0 && matched.Count == 0)
-            missing.Add($"Nessuna sovrapposizione, serve almeno una competenza tra: {string.Join(", ", requiredStack)}");
+            missing.Insert(0, $"Nessuna sovrapposizione, serve almeno una competenza tra: {string.Join(", ", requiredStack)}");
 
-        var candidateBand = BandFromYearsExperience(cv.YearsExperience);
-        var requiredBand = BandFromLabel(posting.SeniorityLevel);
-        if (candidateBand < requiredBand)
-            missing.Add($"Seniority {requiredBand}");
+        // Years only: seniority labels vary by profession and language, stage two weighs them.
+        if (posting.MinYearsExperience is { } requiredYears && cv.YearsExperience < requiredYears)
+            missing.Add($"Esperienza: richiesti almeno {requiredYears:0.#} anni, nel CV {cv.YearsExperience:0.#}");
 
         if (posting.RequiredLanguages is { Count: > 0 })
             missing.AddRange(posting.RequiredLanguages.Where(language => !cv.Languages.Contains(language, StringComparer.OrdinalIgnoreCase)).Select(language => $"Lingua: {language}"));
 
-        // Sources report locations like "Milano, Lombardia": a desired "Milano" contained in it counts.
-        if (posting.WorkMode is WorkMode.Onsite or WorkMode.Hybrid && cv.DesiredLocations.Count > 0 &&
-            !cv.DesiredLocations.Any(desired => (posting.Location ?? string.Empty).Contains(desired, StringComparison.OrdinalIgnoreCase)))
-            missing.Add($"Località: {posting.Location ?? "non specificata"}");
+        CheckLocation(posting, criteria, missing, warnings);
 
-        if (posting.SalaryMaximum is not null && cv.MinimumSalary is not null && posting.SalaryMaximum < cv.MinimumSalary)
-            missing.Add($"RAL massima {posting.SalaryMaximum} inferiore al minimo {cv.MinimumSalary}");
-
-        if (posting.WorkMode == WorkMode.Remote && !cv.AcceptsRemote)
-            warnings.Add("Il ruolo è remoto ma il candidato preferisce lavoro in sede.");
+        if (criteria.MinimumYearlySalary is { } minimum && posting.SalaryMaximum is { } salary && salary < minimum)
+            missing.Add($"Retribuzione massima {salary:0.##} inferiore al minimo {minimum:0.##}");
 
         var passes = missing.Count == 0;
         var reason = passes
@@ -57,25 +55,30 @@ public static class MatchStageOneFilter
         };
     }
 
+    private static void CheckLocation(JobPosting posting, StageOneCriteria criteria, List<string> missing, List<string> warnings)
+    {
+        if (posting.Sweep == SearchSweep.Remote)
+        {
+            // The remote sweep ignored the area on purpose: only genuinely remote jobs belong in it.
+            if (posting.WorkMode != WorkMode.Remote)
+                missing.Add($"Località: {posting.Location ?? "non specificata"} (fuori zona e non interamente da remoto)");
+            return;
+        }
+
+        if (posting.WorkMode == WorkMode.Remote && !criteria.AcceptsRemote)
+            warnings.Add("Il ruolo è da remoto, ma nelle impostazioni il remoto non è tra le preferenze.");
+
+        // The source already restricted the search to the area (e.g. "Milano +30 km" includes
+        // Sesto San Giovanni): re-checking the text would wrongly exclude nearby places.
+        if (criteria.GeoFilteredBySource || criteria.Where.Length == 0)
+            return;
+
+        // Hybrid counts as on-site: the candidate still has to get there.
+        if (posting.WorkMode is WorkMode.Onsite or WorkMode.Hybrid &&
+            !(posting.Location ?? string.Empty).Contains(criteria.Where, StringComparison.OrdinalIgnoreCase))
+            missing.Add($"Località: {posting.Location ?? "non specificata"}");
+    }
+
     private static IEnumerable<string> BuildCandidateStack(CvData cv) =>
         cv.Skills.Concat(cv.Roles.SelectMany(role => role.Stack));
-
-    private enum SeniorityBand { Junior, Mid, Senior, Staff }
-
-    private static SeniorityBand BandFromYearsExperience(double years) => years switch
-    {
-        < 2 => SeniorityBand.Junior,
-        < 5 => SeniorityBand.Mid,
-        < 9 => SeniorityBand.Senior,
-        _ => SeniorityBand.Staff,
-    };
-
-    private static SeniorityBand BandFromLabel(string label)
-    {
-        var normalized = (label ?? string.Empty).Trim().ToLowerInvariant();
-        if (normalized.Contains("junior")) return SeniorityBand.Junior;
-        if (normalized.Contains("staff") || normalized.Contains("lead") || normalized.Contains("principal")) return SeniorityBand.Staff;
-        if (normalized.Contains("senior")) return SeniorityBand.Senior;
-        return SeniorityBand.Mid;
-    }
 }
