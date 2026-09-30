@@ -11,6 +11,7 @@ Tutto lo stato di un'installazione sta in una cartella, indicata con `Jobbby__Da
 | `settings.json` | impostazioni (creato con valori neutri al primo avvio) |
 | `cv.pdf`, `cv.json` o `cv.extracted.json` | il CV; in alternativa `Jobbby__CvPath` |
 | `applications.json`, `cursors.json`, `run-reports.json` | registro degli esiti, cursori delle ricerche, riepiloghi |
+| `skill-aliases.json` | facoltativo: equivalenze tra competenze della propria professione |
 | `runs/` | log delle dry run |
 
 CLI e (in seguito) UI web girano solo nel container, un processo alla volta per `DataDir`: un secondo processo esce subito con un messaggio chiaro. Al primo avvio `applications.json` e `run-reports.json` vengono copiati dalla directory dell'eseguibile, se presenti; `cursors.json` no, perché le chiavi ora includono paese e zona.
@@ -20,7 +21,7 @@ CLI e (in seguito) UI web girano solo nel container, un processo alla volta per 
 ```json
 {
   "searches": { "queries": [], "deriveFromCv": true, "maxDerivedQueries": 3 },
-  "area": { "country": null, "where": "", "distanceKm": null, "acceptsRemote": false },
+  "area": { "country": null, "where": "", "whereFromCv": true, "distanceKm": null, "acceptsRemote": false },
   "salary": { "minimumYearly": null, "minimumPlausible": 5000 },
   "evaluation": { "autoApproveThreshold": 0.7 },
   "llm": { "provider": "claude-cli", "model": "sonnet" },
@@ -30,11 +31,12 @@ CLI e (in seguito) UI web girano solo nel container, un processo alla volta per 
 ```
 
 - `area.country` è obbligatorio per una run: codice Adzuna (`at`, `au`, `be`, `br`, `ca`, `ch`, `de`, `es`, `fr`, `gb`, `in`, `it`, `mx`, `nl`, `nz`, `pl`, `sg`, `us`, `za`).
-- `area.where` e `distanceKm` restringono la ricerca ad Adzuna; la località indicata da Adzuna fa fede, senza ulteriori controlli testuali.
+- `area.where` e `distanceKm` restringono la ricerca ad Adzuna; la località indicata da Adzuna fa fede, senza ulteriori controlli testuali. Con `where` vuoto e `whereFromCv` attivo (default) si usa la località del CV (`location`); `where` compilato vince sempre; `whereFromCv: false` con `where` vuoto cerca in tutto il paese.
 - Con `acceptsRemote` e una località, ogni query fa anche una ricerca in tutto il paese: i risultati passano solo se titolo o estratto contengono una delle parole di `remoteSweep.keywords` (per lingua, es. `{ "it": ["da remoto"], "en": ["remote"] }`) e se l'LLM li classifica come interamente da remoto. Senza parole chiave la ricerca remota resta spenta. Costo: una chiamata Adzuna in più per query.
 - `salary.minimumYearly` esclude solo gli annunci con retribuzione nota e inferiore; gli annunci senza retribuzione restano. Sotto `minimumPlausible` una retribuzione non è considerata annua ed è trattata come sconosciuta. Adzuna non riceve filtri di retribuzione.
 - Con `deriveFromCv` l'LLM aggiunge fino a `maxDerivedQueries` ruoli ricavati dal CV. Adzuna ignora le sigle di due lettere ("AI engineer" diventa "engineer"): meglio la forma estesa.
 - Gli annunci trovati da più query o ripubblicati con un nuovo link vengono valutati una volta sola.
+- Le competenze si confrontano con regole neutre (maiuscole, spazi, versione finale, variante più specifica). Le equivalenze della propria professione vanno in `skill-aliases.json`: `{ "aliases": { "rcp": "rianimazione cardiopolmonare" }, "implies": { "bls-d": ["bls"] } }`.
 - Un `searches.json` esistente può inizializzare le ricerche del primo `settings.json` con `Jobbby__SearchesConfig`.
 
 ## Segreti

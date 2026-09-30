@@ -168,9 +168,11 @@ Default per una nuova installazione, neutri:
 - I segreti (`Adzuna:AppId`, `Adzuna:AppKey`, eventuale `Llm:ApiKey`) restano in user-secrets o in
   variabili d'ambiente. La UI mostra solo se sono presenti.
 
+**Località dal CV** (richiesta del proprietario, 2026-09-30): il CV strutturato ha `location` (città di residenza, estratta anche dal PDF). `area.whereFromCv` (default `true`): con `where` vuoto la ricerca usa la località del CV; `where` compilato vince sempre; `whereFromCv: false` e `where` vuoto = tutto il paese. Un raggio senza località risolta viene ignorato con un avviso.
+
 Esempio, non default, del `settings.json` del proprietario:
 `queries: [".NET developer", "Artificial Intelligence engineer", "LLM engineer"]`, `country: "it"`,
-`where: "Milano"`, `distanceKm: 30`, `acceptsRemote: true`, `minimumYearly: 33000`.
+`where: ""` con `whereFromCv: true` (dal CV: Bologna), `acceptsRemote: true`, `minimumYearly: 33000`.
 
 ### Migrazione dei file esistenti
 

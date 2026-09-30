@@ -25,7 +25,8 @@ public sealed record RunEvent(string Kind, string Message, DateTimeOffset At);
 /// <param name="Gateway">Approval channel for normal runs; required until approvals move to the UI.</param>
 public sealed record RunDependencies(IJobSource JobSource, ILlmClient Llm, ITelegramGateway? Gateway, IReadOnlyList<SourceDefinition> Sources);
 
-public sealed record RunSummary(RunReport Report, int AdzunaCalls, IReadOnlyList<string> Warnings, bool Cancelled, DryRunLog? DryRunLog);
+/// <param name="Area">The area actually searched (settings plus the CV location when enabled).</param>
+public sealed record RunSummary(RunReport Report, int AdzunaCalls, IReadOnlyList<string> Warnings, bool Cancelled, DryRunLog? DryRunLog, AreaSettings Area);
 
 /// <summary>
 /// One complete Jobbby run, driven only by <see cref="JobbbySettings"/> and the CV: plan the
@@ -70,6 +71,14 @@ public sealed class JobbbyRunner
         if (_discoveryConfigured)
             Warn("Discovery configurata ma non eseguita: non fa parte delle run.");
 
+        var skillAliases = SkillAliases.Load(_dataDir.SkillAliasesPath);
+        var resolved = AreaResolver.Resolve(settings.Area, cv);
+        var area = resolved.Area;
+        foreach (var note in resolved.Notes)
+            Report("area", note);
+        foreach (var warning in resolved.Warnings)
+            Warn(warning);
+
         var runAt = DateTimeOffset.UtcNow;
         Report("started", mode == RunMode.Dry ? "Dry run avviata" : "Run avviata");
 
@@ -90,7 +99,7 @@ public sealed class JobbbyRunner
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             Report("cancelled", "Run interrotta durante la preparazione delle ricerche.");
-            return new RunSummary(new RunStatsCollector().BuildReport(runAt), 0, warnings, Cancelled: true, dryRunLog);
+            return new RunSummary(new RunStatsCollector().BuildReport(runAt), 0, warnings, Cancelled: true, dryRunLog, area);
         }
 
         if (plan.DerivationError is not null)
@@ -116,9 +125,9 @@ public sealed class JobbbyRunner
             stats,
             confidenceThreshold: settings.Evaluation.AutoApproveThreshold,
             dryRun: mode == RunMode.Dry,
-            stageOneCriteria: StageOneCriteria.FromSettings(settings.Area, settings.Salary));
+            stageOneCriteria: StageOneCriteria.FromSettings(area, settings.Salary, skillAliases));
         var remoteFilter = new RemoteKeywordFilter(settings.RemoteSweep.AllKeywords());
-        if (settings.Area.AcceptsRemote && remoteFilter.IsEmpty && !string.IsNullOrWhiteSpace(settings.Area.Where))
+        if (area.AcceptsRemote && remoteFilter.IsEmpty && !string.IsNullOrWhiteSpace(area.Where))
             Warn("Remoto accettato ma nessuna parola chiave configurata: la ricerca remota fuori zona è disattivata.");
 
         if (mode == RunMode.Normal)
@@ -135,9 +144,12 @@ public sealed class JobbbyRunner
             foreach (var source in _deps.Sources)
             {
                 var fetch = await MultiQueryFetcher.FetchAsync(
-                    _deps.JobSource, source, plan.Queries, country, settings.Area, remoteFilter, cursors,
+                    _deps.JobSource, source, plan.Queries, country, area, remoteFilter, cursors,
                     mode == RunMode.Dry ? settings.DryRun.MaxPostingsPerQuery : null, runAt, cancellationToken).ConfigureAwait(false);
                 adzunaCalls += fetch.AdzunaCalls;
+                var localQueries = fetch.Queries.Where(query => query.Sweep == JobPostings.SearchSweep.Local).ToList();
+                if (resolved.FromCv && localQueries.Count > 0 && localQueries.All(query => query.Error is null && query.Returned == 0))
+                    Warn($"La zona presa dal CV (\"{area.Where}\") non ha dato risultati su {source.Name}: controlla la località del CV o imposta area.where.");
 
                 foreach (var query in fetch.Queries)
                 {
@@ -176,7 +188,7 @@ public sealed class JobbbyRunner
         if (cancelled)
         {
             Report("cancelled", "Run interrotta: cursori e riepilogo non salvati.");
-            return new RunSummary(report, adzunaCalls, warnings, Cancelled: true, dryRunLog);
+            return new RunSummary(report, adzunaCalls, warnings, Cancelled: true, dryRunLog, area);
         }
 
         if (mode == RunMode.Normal)
@@ -194,7 +206,7 @@ public sealed class JobbbyRunner
         }
 
         Report("completed", RunSummaryText.Build(report));
-        return new RunSummary(report, adzunaCalls, warnings, Cancelled: false, dryRunLog);
+        return new RunSummary(report, adzunaCalls, warnings, Cancelled: false, dryRunLog, area);
     }
 
     private static async Task EvaluateAsync(
@@ -224,7 +236,7 @@ public sealed class JobbbyRunner
                 rawPosting.Company,
                 rawPosting.ApplyUrl,
                 Sweep = rawPosting.Sweep.ToString(),
-                Normalized = posting is null ? null : new { posting.Title, posting.Company, posting.SeniorityLevel, posting.RequiredStack, posting.Location, WorkMode = posting.WorkMode.ToString(), posting.MinYearsExperience, posting.SalaryMaximum },
+                Normalized = posting is null ? null : new { posting.Title, posting.Company, posting.SeniorityLevel, posting.RequiredSkills, posting.Location, WorkMode = posting.WorkMode.ToString(), posting.MinYearsExperience, posting.SalaryMaximum },
                 StageOnePassed = state.Get<bool>(ScoreMatchNode.StageOnePassedStateKey),
                 StageOneReason = state.Get<string>(ScoreMatchNode.StageOneReasonStateKey),
                 MissingRequirements = state.Get<List<string>>(ScoreMatchNode.MissingRequirementsStateKey),

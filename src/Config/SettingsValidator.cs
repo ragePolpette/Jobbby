@@ -32,8 +32,8 @@ public static class SettingsValidator
 
         if (area.DistanceKm is < 0)
             Error("area.distanceKm", "Il raggio non può essere negativo.");
-        else if (area.DistanceKm is not null && string.IsNullOrWhiteSpace(area.Where))
-            Error("area.distanceKm", "Il raggio richiede una località.");
+        else if (area.DistanceKm is not null && string.IsNullOrWhiteSpace(area.Where) && !area.WhereFromCv)
+            Error("area.distanceKm", "Il raggio richiede una località (o la località presa dal CV).");
 
         var searches = settings.Searches;
         if (!searches.DeriveFromCv && searches.Queries.All(string.IsNullOrWhiteSpace))

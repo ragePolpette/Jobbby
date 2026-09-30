@@ -63,6 +63,10 @@ public sealed record AreaSettings
     [JsonPropertyName("distanceKm")]
     public int? DistanceKm { get; init; }
 
+    /// <summary>With <see cref="Where"/> empty, search around the location found in the CV.</summary>
+    [JsonPropertyName("whereFromCv")]
+    public bool WhereFromCv { get; init; } = true;
+
     [JsonPropertyName("acceptsRemote")]
     public bool AcceptsRemote { get; init; }
 }

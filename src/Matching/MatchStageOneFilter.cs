@@ -19,16 +19,16 @@ public static class MatchStageOneFilter
 {
     public static MatchStageOneResult Evaluate(JobPosting posting, CvData cv, StageOneCriteria criteria)
     {
-        var candidateStack = new SkillMatcher(BuildCandidateStack(cv));
-        var requiredStack = posting.RequiredStack ?? new List<string>();
-        var mustHaveStack = posting.MustHaveStack ?? new List<string>();
-        var preferredStack = posting.PreferredStack ?? new List<string>();
-        var matched = requiredStack.Where(candidateStack.Covers).ToList();
-        var missing = mustHaveStack.Where(skill => !candidateStack.Covers(skill)).ToList();
-        var warnings = preferredStack.Where(skill => !candidateStack.Covers(skill)).Select(skill => $"Competenza preferenziale non presente: {skill}").ToList();
+        var candidateSkillMatcher = new SkillMatcher(BuildCandidateSkills(cv), criteria.Aliases);
+        var requiredSkills = posting.RequiredSkills ?? new List<string>();
+        var mustHaveSkills = posting.MustHaveSkills ?? new List<string>();
+        var preferredSkills = posting.PreferredSkills ?? new List<string>();
+        var matched = requiredSkills.Where(candidateSkillMatcher.Covers).ToList();
+        var missing = mustHaveSkills.Where(skill => !candidateSkillMatcher.Covers(skill)).ToList();
+        var warnings = preferredSkills.Where(skill => !candidateSkillMatcher.Covers(skill)).Select(skill => $"Competenza preferenziale non presente: {skill}").ToList();
 
-        if (requiredStack.Count > 0 && matched.Count == 0)
-            missing.Insert(0, $"Nessuna sovrapposizione, serve almeno una competenza tra: {string.Join(", ", requiredStack)}");
+        if (requiredSkills.Count > 0 && matched.Count == 0)
+            missing.Insert(0, $"Nessuna sovrapposizione, serve almeno una competenza tra: {string.Join(", ", requiredSkills)}");
 
         // Years only: seniority labels vary by profession and language, stage two weighs them.
         if (posting.MinYearsExperience is { } requiredYears && cv.YearsExperience < requiredYears)
@@ -79,6 +79,6 @@ public static class MatchStageOneFilter
             missing.Add($"Località: {posting.Location ?? "non specificata"}");
     }
 
-    private static IEnumerable<string> BuildCandidateStack(CvData cv) =>
-        cv.Skills.Concat(cv.Roles.SelectMany(role => role.Stack));
+    private static IEnumerable<string> BuildCandidateSkills(CvData cv) =>
+        cv.Skills.Concat(cv.Roles.SelectMany(role => role.Skills));
 }
