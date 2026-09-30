@@ -21,6 +21,17 @@ dotnet user-secrets set "Llm:ApiKey" "..."
 dotnet user-secrets set "Llm:Model" "..."
 ```
 
+### LLM tramite Claude Code (`claude -p`)
+
+In alternativa a un endpoint OpenAI-compatibile, soprattutto per i test, si può usare il CLI di Claude Code già autenticato. In questo caso `Llm:Endpoint` e `Llm:ApiKey` non servono:
+
+```bash
+dotnet user-secrets set "Llm:Provider" "claude-cli"
+dotnet user-secrets set "Llm:Model" "haiku"    # facoltativo, default sonnet
+```
+
+Il CLI viene lanciato senza strumenti, server MCP né impostazioni utente/progetto, con un timeout di 120 secondi e al massimo 2 processi in parallelo. Opzioni: `Llm:ClaudePath` (default `claude`), `Llm:TimeoutSeconds`, `Llm:MaxConcurrency`. L'autenticazione è quella del CLI (`claude` interattivo e `/login`, oppure `ANTHROPIC_API_KEY`). Ogni chiamata avvia un processo, quindi è più lento dell'API diretta.
+
 Eseguire con limiti espliciti:
 
 ```bash
