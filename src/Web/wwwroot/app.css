@@ -1,0 +1,173 @@
+:root {
+  --paper: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #1c2433;
+  --muted: #5b6575;
+  --line: #d9dee5;
+  --accent: #1f6f5c;
+  --accent-ink: #ffffff;
+  --pending: #a86b12;
+  --shortlisted: #2f7d4f;
+  --auto-rejected: #6b7686;
+  --rejected: #a8412e;
+  --applied: #2d5e9e;
+  --focus: #1f6f5c;
+  font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.brand { font-weight: 600; font-size: 1.25rem; letter-spacing: -0.01em; }
+nav { display: flex; gap: 0.25rem; }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+button.danger { color: var(--rejected); border-color: var(--rejected); }
+
+.tab { border-color: transparent; background: transparent; }
+.tab[aria-current="page"] { border-color: var(--line); background: var(--paper); font-weight: 600; }
+
+/* The one loud thing on the page: what is waiting for a decision. */
+.pending-count {
+  margin-left: auto;
+  background: var(--pending);
+  border-color: var(--pending);
+  color: #fff;
+  font-weight: 600;
+}
+
+main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+h1 { font-size: 1.625rem; font-weight: 600; margin: 0 0 1rem; }
+h2 { font-size: 1.25rem; font-weight: 600; margin: 2rem 0 0.75rem; }
+h3 { font-size: 1rem; font-weight: 600; margin: 1.25rem 0 0.5rem; }
+.hint, .muted { color: var(--muted); font-size: 0.875rem; }
+.actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 1rem 0 0.5rem; }
+
+.run-plan dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0; }
+.run-plan dt { color: var(--muted); }
+.run-plan dd { margin: 0; }
+
+.run-status { margin: 1rem 0 0.5rem; font-weight: 600; }
+.events {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  max-height: 16rem;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+.events:empty { display: none; }
+.events li { padding: 0.15rem 0; }
+.events li.warning, .events li.fetch_failed, .events li.posting_failed, .events li.failed { color: var(--rejected); }
+
+.posting {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--pending);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+.posting h3 { margin: 0; }
+.posting .meta { color: var(--muted); font-size: 0.875rem; margin: 0.15rem 0 0.5rem; }
+.posting p { margin: 0.35rem 0; max-width: 75ch; }
+.posting .actions { margin: 0.5rem 0 0; }
+
+.outcome {
+  display: inline-block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.outcome.Pending { color: var(--pending); }
+.outcome.Shortlisted, .outcome.Approved { color: var(--shortlisted); }
+.outcome.AutoRejected, .outcome.Skipped, .outcome.Interrupted { color: var(--auto-rejected); }
+.outcome.Rejected, .outcome.Failed { color: var(--rejected); }
+.outcome.Applied { color: var(--applied); }
+
+table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); font-size: 0.9375rem; }
+th, td { text-align: left; padding: 0.5rem 0.65rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 0.875rem; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: var(--paper); }
+tr.expanded td { background: var(--paper); }
+.detail-row td { padding: 0.75rem 1rem 1rem; }
+.detail-row dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0 0 0.5rem; }
+.detail-row dt { color: var(--muted); }
+.detail-row dd { margin: 0; }
+
+.toolbar { display: flex; gap: 0.75rem; align-items: center; margin: 1rem 0 0.75rem; flex-wrap: wrap; }
+
+form fieldset { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); margin: 0 0 1rem; padding: 0.75rem 1rem 1rem; }
+form legend { font-weight: 600; padding: 0 0.35rem; }
+.field { display: flex; flex-direction: column; gap: 0.25rem; margin: 0.6rem 0; max-width: 40rem; }
+.field.inline { flex-direction: row; align-items: center; gap: 0.5rem; }
+.field label { font-weight: 600; font-size: 0.9375rem; }
+.field .help { color: var(--muted); font-size: 0.8125rem; }
+.field .error { color: var(--rejected); font-size: 0.875rem; }
+input[type="text"], input[type="number"], select, textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.4rem 0.55rem;
+}
+textarea { min-height: 5rem; resize: vertical; }
+input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--rejected); }
+.secrets li { margin: 0.2rem 0; }
+.ok { color: var(--shortlisted); font-weight: 600; }
+.missing { color: var(--rejected); font-weight: 600; }
+.notice { padding: 0.6rem 0.9rem; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); margin: 0.75rem 0; }
+.notice.error { border-color: var(--rejected); color: var(--rejected); }
+.notice.success { border-color: var(--shortlisted); color: var(--shortlisted); }
+code { font-size: 0.875rem; background: var(--paper); padding: 0.05rem 0.3rem; border-radius: 4px; }
+
+.bottom { max-width: 1100px; margin: 0 auto; padding: 1rem 1.5rem 2rem; font-size: 0.875rem; }
+.bottom a { color: var(--muted); }
+
+@media (max-width: 640px) {
+  main { padding: 1rem; }
+  .top { gap: 0.75rem; }
+  table { font-size: 0.875rem; }
+  .hide-narrow { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; transition: none !important; }
+}
