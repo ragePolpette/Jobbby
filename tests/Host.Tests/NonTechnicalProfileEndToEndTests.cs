@@ -27,7 +27,7 @@ public class NonTechnicalProfileEndToEndTests
         });
         var llm = new ProfileLlm();
         var runner = new JobbbyRunner(new DataDir(tmp.Root),
-            new RunDependencies(source, llm, null, new[] { new SourceDefinition { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" } }));
+            new RunDependencies(source, llm, new[] { new SourceDefinition { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" } }));
         var d = JobbbySettings.Default;
         var settings = d with
         {

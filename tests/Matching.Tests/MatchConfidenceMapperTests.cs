@@ -8,11 +8,12 @@ public class MatchConfidenceMapperTests
     [InlineData(0.1)]
     [InlineData(0.5)]
     [InlineData(0.95)]
-    public void ToMatchConfidence_Weak_AlwaysMapsToZero_RegardlessOfConfidence(double confidence)
+    public void ToMatchConfidence_Weak_KeepsTheJudgesConfidence(double confidence)
     {
+        // Confidence is how sure the judge is, not the fit: the Weak category rejects on its own.
         var judgment = new MatchJudgment(MatchCategories.Weak, "not a fit", confidence);
 
-        Assert.Equal(0.0, MatchConfidenceMapper.ToMatchConfidence(judgment));
+        Assert.Equal(confidence, MatchConfidenceMapper.ToMatchConfidence(judgment));
     }
 
     [Theory]
@@ -23,14 +24,6 @@ public class MatchConfidenceMapperTests
         var judgment = new MatchJudgment(category, "reasoning", confidence);
 
         Assert.Equal(confidence, MatchConfidenceMapper.ToMatchConfidence(judgment));
-    }
-
-    [Fact]
-    public void ToMatchConfidence_WeakCategory_IsCaseInsensitive()
-    {
-        var judgment = new MatchJudgment("weak", "not a fit", 0.8);
-
-        Assert.Equal(0.0, MatchConfidenceMapper.ToMatchConfidence(judgment));
     }
 
     [Theory]

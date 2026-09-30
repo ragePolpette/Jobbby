@@ -6,4 +6,6 @@ public sealed record ApplicationRecord(
     string Title,
     string? SourceUrl,
     DateTimeOffset RecordedAt,
-    string Outcome);
+    string Outcome,
+    string? PostingId = null,
+    string? Reason = null);

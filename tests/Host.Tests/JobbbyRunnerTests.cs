@@ -63,16 +63,16 @@ public class JobbbyRunnerTests
     }
 
     [Fact]
-    public async Task NormalRun_WithoutApprovalChannel_FailsBeforeAnyCall()
+    public async Task NormalRun_RecordsPendingWithoutAnyApprovalChannel()
     {
         using var tmp = new TempDir();
-        var source = new MockJobSource(_ => Array.Empty<RawPosting>());
-        var runner = new JobbbyRunner(new DataDir(tmp.Root), Deps(source));
+        var dataDir = new DataDir(tmp.Root);
+        var runner = new JobbbyRunner(dataDir, Deps(new MockJobSource(_ => new[] { Posting("Nurse", "https://x/1") })));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            runner.RunAsync(Settings(), Cv(), RunMode.Normal, new Progress<RunEvent>(), CancellationToken.None));
+        var summary = await runner.RunAsync(Settings(), Cv(), RunMode.Normal, new Progress<RunEvent>(), CancellationToken.None);
 
-        Assert.Empty(source.RequestsReceived);
+        Assert.Equal(1, summary.Report.Pending);
+        Assert.Contains("\"Pending\"", File.ReadAllText(dataDir.ApplicationsPath));
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public class JobbbyRunnerTests
         using var cts = new CancellationTokenSource();
         var dataDir = new DataDir(tmp.Root);
         var llm = new PromptRoutedLlm(onExtraction: cts.Cancel, blockAfterCallback: true);
-        var runner = new JobbbyRunner(dataDir, Deps(new MockJobSource(_ => new[] { Posting("Nurse", "https://x/1") }), llm, new Notifications.MockTelegramGateway()));
+        var runner = new JobbbyRunner(dataDir, Deps(new MockJobSource(_ => new[] { Posting("Nurse", "https://x/1") }), llm));
 
         var summary = await runner.RunAsync(Settings(), Cv(), RunMode.Normal, new Progress<RunEvent>(), cts.Token);
 
@@ -115,7 +115,7 @@ public class JobbbyRunnerTests
         var dataDir = new DataDir(tmp.Root);
         File.WriteAllText(dataDir.CursorsPath, """[{"SourceName":"Adzuna|fr|||local|other","LastSeenIdentifier":"u","LastRunAt":"2026-09-01T00:00:00+00:00"}]""");
         var llm = new PromptRoutedLlm(judgment: """{"category":"Strong","reasoning":"r","confidence":0.9}""");
-        var runner = new JobbbyRunner(dataDir, Deps(new MockJobSource(_ => new[] { Posting("Nurse", "https://x/1") }), llm, new Notifications.MockTelegramGateway()));
+        var runner = new JobbbyRunner(dataDir, Deps(new MockJobSource(_ => new[] { Posting("Nurse", "https://x/1") }), llm));
 
         await runner.RunAsync(Settings(), Cv(), RunMode.Normal, new Progress<RunEvent>(), CancellationToken.None);
 
@@ -131,7 +131,7 @@ public class JobbbyRunnerTests
         var dataDir = new DataDir(tmp.Root);
         // Strong above the threshold is auto-approved: no Telegram wait in PR 1's normal mode.
         var llm = new PromptRoutedLlm(judgment: """{"category":"Strong","reasoning":"r","confidence":0.9}""");
-        var runner = new JobbbyRunner(dataDir, Deps(new MockJobSource(_ => new[] { Posting("Nurse", "https://x/1") }), llm, new Notifications.MockTelegramGateway()));
+        var runner = new JobbbyRunner(dataDir, Deps(new MockJobSource(_ => new[] { Posting("Nurse", "https://x/1") }), llm));
 
         var summary = await runner.RunAsync(Settings(), Cv(), RunMode.Normal, new Progress<RunEvent>(), CancellationToken.None);
 
@@ -177,8 +177,8 @@ public class JobbbyRunnerTests
 
     private static CvData Cv() => new() { Name = "Candidate", YearsExperience = 5, Skills = new() { "Triage" } };
 
-    private static RunDependencies Deps(IJobSource source, ILlmClient? llm = null, Notifications.ITelegramGateway? gateway = null) =>
-        new(source, llm ?? new PromptRoutedLlm(), gateway, new[] { Adzuna });
+    private static RunDependencies Deps(IJobSource source, ILlmClient? llm = null) =>
+        new(source, llm ?? new PromptRoutedLlm(), new[] { Adzuna });
 
     private static RawPosting Posting(string title, string url) =>
         new(title, "Reparto di pronto soccorso", url, "api.adzuna.com", "Clinic", DateTimeOffset.UtcNow.AddHours(-1));

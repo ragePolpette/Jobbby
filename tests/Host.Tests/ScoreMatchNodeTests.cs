@@ -65,7 +65,7 @@ public class ScoreMatchNodeTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_StageOnePasses_WeakJudgment_MapsToZeroConfidence()
+    public async Task ExecuteAsync_StageOnePasses_WeakJudgment_KeepsConfidenceAndRecordsTheCategory()
     {
         var jobPosting = new JobPosting(
             "Backend Engineer", "Acme", "Mid", new List<string> { "C#" }, "desc", "https://x.example", "https://x.example/apply", ApplyChannels.ExternalPlatform);
@@ -77,7 +77,8 @@ public class ScoreMatchNodeTests
         var result = await node.ExecuteAsync(NewStateFor(jobPosting));
 
         Assert.True((bool)result.Updates[ScoreMatchNode.StageOnePassedStateKey]); // stage one still passed
-        Assert.Equal(0.0, result.Updates[ScoreMatchNode.MatchConfidenceStateKey]); // but mapped to 0
+        Assert.Equal(0.9, result.Updates[ScoreMatchNode.MatchConfidenceStateKey]);
+        Assert.Equal("Weak", result.Updates[ScoreMatchNode.MatchCategoryStateKey]);
     }
 
     [Fact]

@@ -98,7 +98,6 @@ static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir
         settings.Area.Country!,
         resultsPerPage: mode == RunMode.Dry ? settings.DryRun.MaxPostingsPerQuery : 10,
         minimumPlausibleSalary: settings.Salary.MinimumPlausible);
-    ITelegramGateway? gateway = mode == RunMode.Normal ? TelegramGateway.FromEnvironment(httpClient) : null;
     var discoveryConfigured = !string.IsNullOrWhiteSpace(configuration["Jobbby:DiscoveryConfig"]);
 
     using var cancellation = new CancellationTokenSource();
@@ -109,7 +108,7 @@ static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir
         cancellation.Cancel();
     };
 
-    var runner = new JobbbyRunner(dataDir, new RunDependencies(jobSource, llm.Client, gateway, sources), discoveryConfigured);
+    var runner = new JobbbyRunner(dataDir, new RunDependencies(jobSource, llm.Client, sources), discoveryConfigured);
     var progress = new ConsoleProgress();
     var summary = await runner.RunAsync(settings, cvResult.Cv, mode, progress, cancellation.Token);
     Console.WriteLine($"Chiamate Adzuna: {summary.AdzunaCalls}");

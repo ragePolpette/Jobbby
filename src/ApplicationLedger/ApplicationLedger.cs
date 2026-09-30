@@ -42,6 +42,15 @@ public sealed class ApplicationLedger
         }
     }
 
+    /// <summary>The posting's current state: its most recent record, or null.</summary>
+    public ApplicationRecord? Current(string postingId)
+    {
+        lock (_lock)
+        {
+            return _records.LastOrDefault(r => (r.PostingId ?? PostingIdentity.Id(r.DedupeKey)) == postingId);
+        }
+    }
+
     /// <summary>
     /// Records a terminal outcome and rewrites the file. Guarded by a lock because a
     /// single ledger instance can be shared across concurrent <c>GraphRun</c>s (e.g. one

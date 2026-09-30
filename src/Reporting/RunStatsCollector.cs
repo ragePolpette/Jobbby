@@ -17,6 +17,8 @@ public sealed class RunStatsCollector
     private int _humanApproved;
     private int _humanRejected;
     private int _timedOut;
+    private int _pending;
+    private int _autoRejected;
 
     private readonly ConcurrentDictionary<string, int> _stageTwoBreakdown = new();
     private readonly ConcurrentDictionary<string, int> _errorsPerSource = new();
@@ -38,6 +40,10 @@ public sealed class RunStatsCollector
 
     public void IncrementTimedOut() => Interlocked.Increment(ref _timedOut);
 
+    public void IncrementPending() => Interlocked.Increment(ref _pending);
+
+    public void IncrementAutoRejected() => Interlocked.Increment(ref _autoRejected);
+
     public void IncrementError(string sourceName) =>
         _errorsPerSource.AddOrUpdate(sourceName, 1, (_, count) => count + 1);
 
@@ -51,5 +57,7 @@ public sealed class RunStatsCollector
         HumanApproved: Volatile.Read(ref _humanApproved),
         HumanRejected: Volatile.Read(ref _humanRejected),
         TimedOut: Volatile.Read(ref _timedOut),
-        ErrorsPerSource: new Dictionary<string, int>(_errorsPerSource));
+        ErrorsPerSource: new Dictionary<string, int>(_errorsPerSource),
+        Pending: Volatile.Read(ref _pending),
+        AutoRejected: Volatile.Read(ref _autoRejected));
 }

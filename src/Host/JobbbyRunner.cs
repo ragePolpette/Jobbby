@@ -22,8 +22,7 @@ public enum RunMode
 /// <param name="Kind">started, queries, fetched, fetch_failed, evaluated, posting_failed, warning, completed, cancelled.</param>
 public sealed record RunEvent(string Kind, string Message, DateTimeOffset At);
 
-/// <param name="Gateway">Approval channel for normal runs; required until approvals move to the UI.</param>
-public sealed record RunDependencies(IJobSource JobSource, ILlmClient Llm, ITelegramGateway? Gateway, IReadOnlyList<SourceDefinition> Sources);
+public sealed record RunDependencies(IJobSource JobSource, ILlmClient Llm, IReadOnlyList<SourceDefinition> Sources);
 
 /// <param name="Area">The area actually searched (settings plus the CV location when enabled).</param>
 public sealed record RunSummary(RunReport Report, int AdzunaCalls, IReadOnlyList<string> Warnings, bool Cancelled, DryRunLog? DryRunLog, AreaSettings Area);
@@ -55,8 +54,6 @@ public sealed class JobbbyRunner
         var errors = SettingsValidator.Validate(settings, forRun: true);
         if (errors.Count > 0)
             throw new SettingsValidationException(errors);
-        if (mode == RunMode.Normal && _deps.Gateway is null)
-            throw new InvalidOperationException("Una run normale richiede un canale di approvazione (Telegram) finché le approvazioni non passano alla UI.");
 
         var country = settings.Area.Country!;
         var warnings = new List<string>();
@@ -114,11 +111,10 @@ public sealed class JobbbyRunner
             : _dataDir.ApplicationsPath;
         var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
         var stats = new RunStatsCollector();
-        var registry = new PendingApprovalRegistry();
-        var gateway = _deps.Gateway ?? new MockTelegramGateway();
+        // No approval channel: postings below the threshold are recorded as Pending and wait for the user.
         var definition = HostGraph.Build(
-            gateway,
-            registry,
+            null,
+            new PendingApprovalRegistry(),
             ledger,
             _deps.Llm,
             cv,
@@ -129,12 +125,6 @@ public sealed class JobbbyRunner
         var remoteFilter = new RemoteKeywordFilter(settings.RemoteSweep.AllKeywords());
         if (area.AcceptsRemote && remoteFilter.IsEmpty && !string.IsNullOrWhiteSpace(area.Where))
             Warn("Remoto accettato ma nessuna parola chiave configurata: la ricerca remota fuori zona è disattivata.");
-
-        if (mode == RunMode.Normal)
-        {
-            gateway.ReplyReceived += registry.OnReply;
-            gateway.Start();
-        }
 
         var adzunaCalls = 0;
         var newCursors = new List<SourceCursor>();
@@ -179,8 +169,6 @@ public sealed class JobbbyRunner
         }
         finally
         {
-            if (mode == RunMode.Normal)
-                gateway.Stop();
             if (mode == RunMode.Dry && File.Exists(ledgerPath))
                 File.Delete(ledgerPath);
         }
@@ -199,7 +187,6 @@ public sealed class JobbbyRunner
                 merged[cursor.SourceName] = cursor;
             AtomicFile.WriteAllText(_dataDir.CursorsPath, JsonSerializer.Serialize(merged.Values.ToList(), CursorJsonOptions));
             RunReportStore.AppendRunReport(_dataDir.RunReportsPath, report);
-            await gateway.SendAsync(RunSummaryText.Build(report), CancellationToken.None).ConfigureAwait(false);
         }
         else
         {

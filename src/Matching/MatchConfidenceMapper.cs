@@ -7,11 +7,9 @@ namespace Matching;
 /// </summary>
 public static class MatchConfidenceMapper
 {
-    public static double ToMatchConfidence(MatchJudgment judgment)
-    {
-        if (string.Equals(judgment.Category, MatchCategories.Weak, StringComparison.OrdinalIgnoreCase))
-            return 0.0; // discarded regardless of how confident the judge was in calling it weak
-
-        return Math.Clamp(judgment.Confidence, 0.0, 1.0);
-    }
+    /// <summary>
+    /// The judge's confidence, clamped to 0-1. It measures how sure the judge is, not how good
+    /// the fit is: a Weak verdict keeps its confidence and is rejected by its category instead.
+    /// </summary>
+    public static double ToMatchConfidence(MatchJudgment judgment) => Math.Clamp(judgment.Confidence, 0.0, 1.0);
 }
