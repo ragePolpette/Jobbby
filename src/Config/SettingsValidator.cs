@@ -52,9 +52,40 @@ public static class SettingsValidator
         if (settings.DryRun.MaxPostingsPerQuery is < 1 or > 20)
             Error("dryRun.maxPostingsPerQuery", "Deve essere tra 1 e 20.");
 
+        ValidatePresentation(settings.Presentation, Error);
+
         if (!LlmProviders.Contains(settings.Llm.Provider))
             Error("llm.provider", $"Provider non supportato: '{settings.Llm.Provider}'. Valori ammessi: {string.Join(", ", LlmProviders)}.");
 
         return errors;
+    }
+
+    public static readonly IReadOnlyList<string> PresentationTones = new[] { "formale", "cordiale" };
+    public static readonly IReadOnlyList<string> PresentationLengths = new[] { "breve", "media" };
+    public static readonly IReadOnlyList<string> OpeningPlaceholders = new[] { "nome", "ruolo", "azienda" };
+    public const int MaxPresentationTextLength = 2000;
+
+    private static void ValidatePresentation(PresentationSettings presentation, Action<string, string> error)
+    {
+        if (!PresentationTones.Contains(presentation.Tone))
+            error("presentation.tone", $"Tono non valido. Valori ammessi: {string.Join(", ", PresentationTones)}.");
+        if (!PresentationLengths.Contains(presentation.Length))
+            error("presentation.length", $"Lunghezza non valida. Valori ammessi: {string.Join(", ", PresentationLengths)}.");
+        if (presentation.Language != "annuncio" && !System.Text.RegularExpressions.Regex.IsMatch(presentation.Language, "^[a-z]{2}$"))
+            error("presentation.language", "Usa \"annuncio\" (la lingua dell'annuncio) o un codice lingua di due lettere, per esempio \"it\" o \"en\".");
+
+        var unknown = System.Text.RegularExpressions.Regex.Matches(presentation.Opening, @"\{([^{}]*)\}")
+            .Select(match => match.Groups[1].Value)
+            .Where(name => !OpeningPlaceholders.Contains(name))
+            .Distinct()
+            .ToList();
+        if (unknown.Count > 0)
+            error("presentation.opening", $"Segnaposti sconosciuti: {string.Join(", ", unknown.Select(name => "{" + name + "}"))}. Ammessi: {{nome}}, {{ruolo}}, {{azienda}}.");
+
+        foreach (var (field, text) in new[] { ("opening", presentation.Opening), ("closing", presentation.Closing), ("extraInstructions", presentation.ExtraInstructions) })
+        {
+            if (text.Length > MaxPresentationTextLength)
+                error($"presentation.{field}", $"Massimo {MaxPresentationTextLength} caratteri.");
+        }
     }
 }

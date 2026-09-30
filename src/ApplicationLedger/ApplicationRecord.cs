@@ -34,4 +34,6 @@ public sealed record ApplicationRecord(
     public string? Reasoning { get; init; }
     public List<string>? MissingRequirements { get; init; }
     public List<string>? Warnings { get; init; }
+    public PresentationMessage? Presentation { get; init; }
+    public UserFullText? FullText { get; init; }
 }

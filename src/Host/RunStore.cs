@@ -25,6 +25,8 @@ public sealed class RunStore
 
     private readonly DataDir _dataDir;
 
+    private readonly object _updateLock = new();
+
     public RunStore(DataDir dataDir) => _dataDir = dataDir;
 
     public string PathOf(string runId) => Path.Combine(_dataDir.RunsDirectory, runId + ".json");
@@ -34,6 +36,27 @@ public sealed class RunStore
         if (!SafeId.IsMatch(run.RunId))
             throw new ArgumentException($"Invalid run id '{run.RunId}'.", nameof(run));
         AtomicFile.WriteAllText(PathOf(run.RunId), JsonSerializer.Serialize(run, JsonOptions));
+    }
+
+    /// <summary>
+    /// Changes one posting of a stored run (message or pasted text on a dry-run posting). Null if the run or
+    /// the posting is unknown.
+    /// </summary>
+    public RunPosting? UpdatePosting(string runId, string postingId, Func<RunPosting, RunPosting> change)
+    {
+        lock (_updateLock)
+        {
+            if (Load(runId) is not { } run)
+                return null;
+            var index = run.Postings.FindIndex(posting => posting.PostingId == postingId);
+            if (index < 0)
+                return null;
+
+            var postings = run.Postings.ToList();
+            postings[index] = change(postings[index]);
+            Save(run with { Postings = postings });
+            return postings[index];
+        }
     }
 
     /// <summary>The run, or null if the id is unknown or not a valid run id (never a path outside runs/).</summary>

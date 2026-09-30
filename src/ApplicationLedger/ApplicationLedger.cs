@@ -105,6 +105,38 @@ public sealed class ApplicationLedger
     }
 
     /// <summary>
+    /// A change to a posting that is not a decision (message, pasted text, re-evaluation): appends a
+    /// changed copy of its current record, keeping its identity and its history. Null if the id is unknown.
+    /// </summary>
+    public ApplicationRecord? Update(string postingId, Func<ApplicationRecord, ApplicationRecord> change)
+    {
+        lock (_lock)
+        {
+            var current = Current(postingId);
+            if (current is null)
+                return null;
+
+            var updated = change(current) with { DedupeKey = current.DedupeKey, PostingId = current.PostingId, RecordedAt = DateTimeOffset.UtcNow };
+            RecordOutcome(updated);
+            return updated;
+        }
+    }
+
+    /// <summary>The current record of the most recently touched postings, newest first.</summary>
+    public IReadOnlyList<ApplicationRecord> Recent(int count)
+    {
+        lock (_lock)
+        {
+            return _records
+                .GroupBy(r => r.PostingId)
+                .Select(group => group.OrderBy(r => r.RecordedAt).Last())
+                .OrderByDescending(r => r.RecordedAt)
+                .Take(count)
+                .ToList();
+        }
+    }
+
+    /// <summary>
     /// Recomputes every key for new company-suffix settings, on this same instance: a second
     /// instance would hold its own copy of the file and overwrite this one's writes.
     /// </summary>
