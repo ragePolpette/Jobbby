@@ -147,10 +147,19 @@ async function refreshPendingCount() {
 function postingCard(record, onDecided) {
   const container = document.createElement("div");
   const decide = async decision => {
+    for (const button of container.querySelectorAll("button")) button.disabled = true;
     try {
-      await api("POST", `/api/postings/${encodeURIComponent(record.postingId)}/decision`, { decision });
-      onDecided();
+      const result = await api("POST", `/api/postings/${encodeURIComponent(record.postingId)}/decision`, { decision });
+      if (decision !== "approve") return onDecided();
+      refreshPendingCount();
+      const approved = el("article", { class: "posting" },
+        el("h3", { text: record.title }),
+        el("p", {}, outcomeBadge("Approved"), ` ${record.company}`),
+        result.presentationError ? el("p", { class: "notice error", text: `Messaggio non generato: ${result.presentationError}` }) : null,
+        postingTools({ postingId: record.postingId }, result.record));
+      clear(container).append(approved);
     } catch (error) {
+      for (const button of container.querySelectorAll("button")) button.disabled = false;
       notice(container, error.message, "error");
     }
   };
@@ -171,7 +180,8 @@ function postingCard(record, onDecided) {
     el("div", { class: "actions" },
       el("button", { type: "button", class: "primary", onclick: () => decide("approve"), text: "Approva" }),
       el("button", { type: "button", onclick: () => decide("reject"), text: "Rifiuta" }),
-      safeLink(record.applyUrl || record.sourceUrl, "Apri annuncio"))));
+      safeLink(record.applyUrl || record.sourceUrl, "Apri annuncio")),
+    postingTools({ postingId: record.postingId }, record)));
   return container;
 }
 
@@ -397,17 +407,40 @@ async function renderSettings() {
     el("fieldset", {}, el("legend", { text: "LLM" }),
       field("llm.provider", "Provider", select("llm.provider", [["claude-cli", "Claude Code (claude -p)"], ["openai", "Endpoint compatibile OpenAI"]], settings.llm.provider)),
       field("llm.model", "Modello", textInput("llm.model", settings.llm.model))),
+    el("fieldset", {}, el("legend", { text: "Messaggio di presentazione" }),
+      checkbox("presentation.enabled", "Proponi un messaggio quando approvi un annuncio", settings.presentation.enabled),
+      field("presentation.opening", "Apertura", textArea("presentation.opening", settings.presentation.opening),
+        "Vuota: l'LLM scrive un'apertura neutra. Puoi usare {nome}, {ruolo} e {azienda}."),
+      field("presentation.closing", "Chiusura", textArea("presentation.closing", settings.presentation.closing),
+        "Inserita così com'è in fondo al messaggio: qui vanno saluti, firma e contatti, che l'LLM non scrive mai."),
+      field("presentation.tone", "Tono", select("presentation.tone", [["formale", "Formale"], ["cordiale", "Cordiale"]], settings.presentation.tone)),
+      field("presentation.length", "Lunghezza", select("presentation.length", [["breve", "Breve (circa 100 parole)"], ["media", "Media (circa 180 parole)"]], settings.presentation.length)),
+      field("presentation.language", "Lingua", textInput("presentation.language", settings.presentation.language),
+        "\"annuncio\" per scrivere nella lingua dell'annuncio, oppure un codice di due lettere come it o en."),
+      field("presentation.extraInstructions", "Istruzioni aggiuntive", textArea("presentation.extraInstructions", settings.presentation.extraInstructions)),
+      presentationPreview(() => readPresentation())),
     el("fieldset", {}, el("legend", { text: "Segreti" }),
       el("p", { class: "hint", text: "I segreti non passano dalla UI. Si impostano nel container con dotnet user-secrets, dalla cartella src/Host." }),
       el("ul", { class: "secrets" }, Object.entries(secrets).map(([key, present]) =>
         el("li", {}, el("code", { text: key }), " ", el("span", { class: present ? "ok" : "missing", text: present ? "impostato" : "mancante" }))))),
     el("div", { class: "actions" }, el("button", { type: "submit", class: "primary", text: "Salva impostazioni" })));
 
+  const readPresentation = () => ({
+    enabled: checked("presentation.enabled"),
+    opening: value("presentation.opening"),
+    closing: value("presentation.closing"),
+    tone: value("presentation.tone"),
+    length: value("presentation.length"),
+    language: value("presentation.language").trim(),
+    extraInstructions: value("presentation.extraInstructions"),
+  });
+
   form.onsubmit = async event => {
     event.preventDefault();
     clearFieldErrors(form);
     const updated = {
       ...settings,
+      presentation: readPresentation(),
       searches: { queries: lines(value("searches.queries")), deriveFromCv: checked("searches.deriveFromCv"), maxDerivedQueries: numberOrNull(value("searches.maxDerivedQueries")) },
       area: {
         country: value("area.country") || null,
@@ -433,6 +466,32 @@ async function renderSettings() {
 }
 loaders.settings = renderSettings;
 
+function presentationPreview(read) {
+  const result = el("div", { class: "preview" });
+  const button = el("button", { type: "button", text: "Anteprima" });
+  button.addEventListener("click", async () => {
+    const form = button.closest("form");
+    clearFieldErrors(form);
+    button.disabled = true;
+    clear(result).append(el("p", { class: "hint", role: "status", text: "Scrivo un messaggio di prova…" }));
+    try {
+      const preview = await api("POST", "/api/presentation/preview", { presentation: read() });
+      clear(result).append(el("div", {},
+        el("p", { class: "hint", text: `Sull'annuncio "${preview.posting.title}" di ${preview.posting.company}. Niente viene salvato.` }),
+        el("div", { class: "message-preview", text: preview.text })));
+    } catch (error) {
+      clear(result);
+      showFieldErrors(form, error);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  return el("div", {},
+    el("p", { class: "hint", text: "Prova le impostazioni prima di salvarle, sull'ultimo annuncio valutato. È una chiamata all'LLM." }),
+    el("div", { class: "actions" }, button),
+    result);
+}
+
 function clearFieldErrors(form) {
   for (const node of form.querySelectorAll(".error")) node.textContent = "";
   for (const node of form.querySelectorAll("[aria-invalid]")) node.removeAttribute("aria-invalid");
@@ -457,6 +516,99 @@ function showFieldErrors(form, error) {
   }
   const summary = errors.length ? ["Controlla i campi evidenziati.", ...unmatched].join(" ") : error.message;
   notice(form, summary, "error");
+}
+
+// ---------- presentation message and pasted full text
+
+/** target: { postingId } for a ledger posting, { runId, postingId } for a dry-run posting. */
+function postingUrl(target, action) {
+  return target.runId
+    ? `/api/runs/${encodeURIComponent(target.runId)}/postings/${encodeURIComponent(target.postingId)}/${action}`
+    : `/api/postings/${encodeURIComponent(target.postingId)}/${action}`;
+}
+
+function describeEvaluation(snapshot) {
+  const parts = [OUTCOME_LABELS[snapshot.outcome] || snapshot.outcome];
+  if (typeof snapshot.confidence === "number") parts.push(`confidenza ${formatConfidence(snapshot.confidence)}`);
+  if (snapshot.category) parts.push(snapshot.category);
+  return parts.join(", ");
+}
+
+function postingTools(target, record) {
+  const box = el("div", { class: "posting-tools" });
+
+  const draw = current => {
+    clear(box);
+    const busy = el("span", { class: "hint", role: "status" });
+    const act = async (text, work) => {
+      busy.textContent = text;
+      for (const button of box.querySelectorAll("button")) button.disabled = true;
+      try {
+        draw(await work());
+      } catch (error) {
+        busy.textContent = "";
+        for (const button of box.querySelectorAll("button")) button.disabled = false;
+        notice(box, error.message, "error");
+      }
+    };
+    const button = (text, onclick, primary) => el("button", { type: "button", class: primary ? "primary" : null, text, onclick });
+
+    if (current.fullText) {
+      box.append(el("p", {},
+        el("span", { class: "badge", text: "testo completo fornito da te" }),
+        ` il ${formatDate(current.fullText.providedAt)}. Valutazione sull'estratto: ${describeEvaluation(current.fullText.excerptEvaluation)}.`));
+    }
+
+    const message = el("section", { class: "presentation" }, el("h4", { text: "Messaggio di presentazione" }));
+    const generate = () => act("Scrivo il messaggio…", () => api("POST", postingUrl(target, "presentation"), {}));
+    const presentation = current.presentation;
+    if (presentation) {
+      const area = el("textarea", { class: "message", rows: 10, "aria-label": "Messaggio di presentazione" });
+      area.value = presentation.text;
+      const copy = async () => {
+        try {
+          await navigator.clipboard.writeText(area.value);
+          notice(message, "Messaggio copiato.", "success");
+        } catch {
+          area.select();
+          notice(message, "Copia non riuscita: il testo è selezionato, usa Ctrl+C.", "error");
+        }
+      };
+      message.append(
+        el("p", { class: "notice", text: presentation.basedOnFullText ? "Basato sul testo che hai incollato." : "Basato sull'estratto dell'annuncio (500 caratteri): verificalo prima di inviarlo." }),
+        el("p", { class: "hint", text: (presentation.matches || []).length
+          ? `Punti in comune con il CV: ${presentation.matches.join("; ")}.`
+          : "Nessuna corrispondenza specifica trovata nell'estratto: il messaggio è generico." }),
+        presentation.edited ? el("p", { class: "hint", text: "Modificato da te." }) : null,
+        area,
+        el("div", { class: "actions" },
+          button("Copia", copy, true),
+          button("Salva modifiche", () => act("Salvataggio…", () => api("PUT", postingUrl(target, "presentation"), { text: area.value }))),
+          button("Rigenera", generate),
+          !target.runId && current.outcome !== "Applied"
+            ? button("Segna come inviata", () => act("Salvataggio…", async () => (await api("POST", postingUrl(target, "decision"), { decision: "applied" })).record))
+            : null,
+          busy));
+    } else {
+      message.append(
+        el("p", { class: "hint", text: "Nessun messaggio ancora. Ogni messaggio è una chiamata all'LLM; Jobbby non lo invia: lo copi tu." }),
+        el("div", { class: "actions" }, button("Genera messaggio", generate), busy));
+    }
+
+    const pasted = el("textarea", { rows: 8, maxlength: 20000, "aria-label": "Testo completo dell'annuncio" });
+    pasted.value = current.fullText ? current.fullText.text : "";
+    const paste = el("details", { class: "full-text" },
+      el("summary", { text: current.fullText ? "Sostituisci il testo completo" : "Incolla testo completo" }),
+      el("p", { class: "hint", text: "Copia il testo dalla pagina dell'annuncio e incollalo qui (massimo 20.000 caratteri). L'annuncio viene rivalutato su questo testo; se l'hai già deciso, la tua decisione resta." }),
+      pasted,
+      el("div", { class: "actions" },
+        button("Rivaluta", () => act("Rivalutazione in corso…", () => api("PUT", postingUrl(target, "full-text"), { text: pasted.value })))));
+
+    box.append(message, paste);
+  };
+
+  draw(record);
+  return box;
 }
 
 // ---------- CV page
@@ -738,7 +890,7 @@ async function renderRunDetail(runId) {
           return;
         }
         row.classList.add("expanded");
-        row.after(postingDetailRow(item, record, () => renderRunDetail(runId)));
+        row.after(postingDetailRow(item, record, () => renderRunDetail(runId), run));
       };
       row.addEventListener("click", toggle);
       row.addEventListener("keydown", e => e.key === "Enter" && toggle());
@@ -750,7 +902,7 @@ async function renderRunDetail(runId) {
   detail.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function postingDetailRow(item, record, onDecided) {
+function postingDetailRow(item, record, onDecided, run) {
   const facts = [
     ["Competenze richieste", (record.requiredSkills || []).join(", ")],
     ["Requisiti mancanti", (record.missingRequirements || []).join("; ")],
@@ -779,6 +931,10 @@ function postingDetailRow(item, record, onDecided) {
       el("button", { type: "button", class: "primary", onclick: () => decide("approve"), text: "Approva" }),
       el("button", { type: "button", onclick: () => decide("reject"), text: "Rifiuta" }));
   }
+  const target = item.currentPostingId
+    ? { postingId: item.currentPostingId }
+    : run && run.mode === "dry" && item.posting.record ? { runId: run.runId, postingId: item.posting.postingId } : null;
+  if (target) cell.append(postingTools(target, record));
   return el("tr", { class: "detail-row" }, cell);
 }
 loaders.history = renderHistory;

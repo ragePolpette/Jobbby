@@ -54,5 +54,19 @@ public class StaticUiTests : IDisposable
         Assert.DoesNotContain("cv.message", script);
     }
 
+    [Fact]
+    public async Task PostingTools_AndMessageSettings_AreOnThePage()
+    {
+        var script = await _factory.CreateClient().GetStringAsync("/app.js");
+
+        foreach (var expected in new[]
+        {
+            "postingUrl(target, \"presentation\")", "postingUrl(target, \"full-text\")", "\"/api/presentation/preview\"", "maxlength: 20000",
+            "Segna come inviata", "Basato sul testo che hai incollato.", "testo completo fornito da te",
+            "Nessuna corrispondenza specifica trovata nell'estratto", "presentation.opening", "presentation.closing",
+        })
+            Assert.Contains(expected, script);
+    }
+
     public void Dispose() => _factory.Dispose();
 }

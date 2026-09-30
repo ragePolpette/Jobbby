@@ -175,3 +175,11 @@ code { font-size: 0.875rem; background: var(--paper); padding: 0.05rem 0.3rem; b
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .cv-upload .actions { align-items: center; }
 .cv-roles fieldset { max-width: 44rem; }
+
+.posting-tools { margin-top: 0.75rem; border-top: 1px solid var(--line); padding-top: 0.5rem; }
+.posting-tools h4 { font-size: 0.9375rem; margin: 0.5rem 0 0.25rem; }
+.posting-tools textarea { width: 100%; max-width: 44rem; }
+textarea.message { min-height: 12rem; }
+.badge { display: inline-block; padding: 0.1rem 0.5rem; border: 1px solid var(--applied); color: var(--applied); border-radius: 999px; font-size: 0.8125rem; }
+.full-text summary { cursor: pointer; font-weight: 600; margin: 0.5rem 0; }
+.message-preview { white-space: pre-wrap; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 0.75rem; max-width: 44rem; }
