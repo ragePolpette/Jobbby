@@ -36,11 +36,20 @@ public class ClaudeCliLlmClientTests
     }
 
     [Fact]
+    public void StartInfo_PassesTheEnglishSystemPrompt()
+    {
+        var arguments = new ClaudeCliLlmClient().BuildStartInfo().ArgumentList.ToList();
+
+        Assert.Equal(ClaudeCliLlmClient.SystemPrompt, arguments[arguments.IndexOf("--system-prompt") + 1]);
+        Assert.StartsWith("You are a completion engine", ClaudeCliLlmClient.SystemPrompt);
+    }
+
+    [Fact]
     public async Task CompleteAsync_ResultWrappedInCodeFence_ReturnsInnerContent()
     {
         var runner = new ScriptedRunner(Success("```json\n{\"a\":1}\n```"));
 
-        var result = await new ClaudeCliLlmClient(runner: runner).CompleteAsync("prompt");
+        var result = await new CodeFenceStrippingLlmClient(new ClaudeCliLlmClient(runner: runner)).CompleteAsync("prompt");
 
         Assert.Equal("{\"a\":1}", result);
     }

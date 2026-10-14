@@ -56,8 +56,8 @@ public class CliCommandsTests
     }
 
     [Theory]
-    [InlineData("0123456789abcdef0123456789abcdef", "approve", "sconosciuto")]
-    [InlineData(null, "maybe", "Azione")]
+    [InlineData("0123456789abcdef0123456789abcdef", "approve", "Unknown posting")]
+    [InlineData(null, "maybe", "Unknown action")]
     public void Decide_UnknownIdOrAction_Exits2WithAMessage(string? id, string action, string expected)
     {
         using var tmp = new TempDir();

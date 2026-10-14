@@ -8,11 +8,9 @@ namespace Host.Nodes;
 
 /// <summary>
 /// Two-stage match scoring for the normalized JobPosting against one fixed candidate CV.
-/// MatchStageOneFilter runs first (no LLM, cheap): a fail is recorded but this node does
-/// not decide routing on its own - HostGraph's edge sends stage-one failures straight to
-/// END, so they never reach Telegram. A pass is handed to MatchStageTwoJudge (LLM), and
-/// the judgment is mapped to the single numeric MatchConfidence the existing
-/// threshold-based downstream routing already consumes, unchanged.
+/// MatchStageOneFilter runs first (no LLM, cheap): a fail is recorded and turned into an
+/// outcome by RecordOutcomeNode. A pass is handed to MatchStageTwoJudge (LLM), and the
+/// judgment is mapped to the single numeric MatchConfidence the threshold consumes.
 /// </summary>
 public sealed class ScoreMatchNode : INode
 {

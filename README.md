@@ -26,21 +26,22 @@ Postings already in the ledger are not re-evaluated and cost no LLM calls.
 - Configurable search area: country, location, radius in km, remote sweep.
 - Profession-neutral skill matching with optional `skill-aliases.json`.
 - Interruptible runs: `Ctrl+C` stops in-flight LLM calls and the run is marked `Interrupted`.
+- Bounded and resilient outgoing calls: at most `Llm:MaxConcurrency` LLM calls in flight, retries with backoff for the LLM endpoint and Adzuna, prompts in English or Italian (`Llm:Language`).
 
 ## Architecture
 
-The solution (`GraphEngine.sln`) is split into projects under `src/`:
+The solution (`Jobbby.sln`) is split into projects under `src/`:
 
 | Project | Role |
 |---|---|
 | `GraphEngine` | Graph execution engine and LLM clients |
+| `Jobbby.Core` | Settings (`Config`) and the outcome ledger (`ApplicationLedger`) |
 | `JobPostings` | Job source abstraction and Adzuna client |
-| `CvExtraction` | CV loading and LLM-based extraction |
+| `CvExtraction` | CV loading and LLM-based extraction (library) |
 | `Matching` | Two-stage matching (filter, then LLM judgment) |
-| `Host` | CLI, run orchestration, ledger and run storage |
+| `Reporting` | Run statistics and source cursors |
+| `Host` | CLI and run orchestration |
 | `Web` | ASP.NET web UI and API |
-| `Config`, `ApplicationLedger`, `Reporting` | Settings, outcome ledger, run reports |
-| `Discovery`, `Notifications` | Source discovery and Telegram gateway; present in the code but not used by runs |
 
 Tests are under `tests/`, one project per source project.
 
@@ -61,7 +62,7 @@ export Jobbby__DataDir=/path/to/data
 Jobbby__DryRun=true dotnet run --project src/Host/Host.csproj
 ```
 
-The first start creates `settings.json` in the `DataDir` with neutral values. Set `area.country` and put your CV in the `DataDir` before a real run.
+The first start creates `settings.json` in the `DataDir` with neutral values. Set `area.country` and put your CV in the `DataDir` before a real run. Prompts are in English by default; if your CV and the postings are in Italian, set `Llm__Language=it`.
 
 ## Configuration
 
@@ -101,21 +102,24 @@ The UI listens on `http://0.0.0.0:5080` by default. See [docs/configuration.md](
 - The web UI has no login. It accepts only `localhost` and `127.0.0.1` hosts, and state-changing requests require the `X-Jobbby-Request: 1` header. Do not expose it to untrusted networks.
 - Secrets belong in `dotnet user-secrets` or environment variables, never in the repository or the `DataDir`.
 - With `claude-cli`, the CLI is launched without tools, MCP servers, or user/project settings.
+- Adzuna credentials travel in the query string: the web UI's outgoing HTTP client does not log requests, and request errors are reported with credentials masked.
+- LLM output is validated (JSON, match category, field lengths) and never decides which posting is which.
 
 See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
 ## Development
 
 ```bash
-dotnet build GraphEngine.sln
-dotnet test GraphEngine.sln
+dotnet build Jobbby.sln
+dotnet test Jobbby.sln
+dotnet format Jobbby.sln --verify-no-changes
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). No linter or formatter is configured in the repository.
+Warnings are errors, analyzers run at `latest-recommended` and the `.editorconfig` style rules are enforced in the build. CI runs the same steps on pushes to `main` and on pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Project status
 
-Under active development. Telegram approvals and Discovery remain in the code but are not wired into runs. Design notes are in `docs/superpowers/` (in Italian).
+Under active development. Old internal design notes are archived in `docs/archive/` (in Italian, not maintained).
 
 ## License
 

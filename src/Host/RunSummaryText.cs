@@ -1,7 +1,6 @@
 using GraphEngine;
 using Host.Nodes;
 using Matching;
-using Notifications;
 using Reporting;
 
 namespace Host;
@@ -27,13 +26,7 @@ public static class RunSummaryText
 
         if (!state.Get<bool>(ScoreMatchNode.StageOnePassedStateKey))
             return $"scartato dal filtro stage 1 ({state.Get<string>(ScoreMatchNode.StageOneReasonStateKey)})";
-        if (!state.ContainsKey(RecordIfApprovedNode.OutcomeStateKey))
-            return $"valutato senza azioni (confidenza {state.Get<double>(ScoreMatchNode.MatchConfidenceStateKey):0.00})";
-        if (state.Get<bool>(RecordIfApprovedNode.AutoApprovedStateKey))
-            return "selezionato automaticamente";
-        if (state.Get<string>(AskApprovalNode.OutcomeStateKey) == HumanInputNode.SkippedNoResponseOutcome)
-            return "in attesa di approvazione";
-        return state.Get<bool>(RecordIfApprovedNode.RecordedStateKey) ? "approvato" : "rifiutato";
+        return $"valutato senza azioni (confidenza {state.Get<double>(ScoreMatchNode.MatchConfidenceStateKey):0.00})";
     }
 
     /// <summary>"label (reason)", or the reason alone when it already starts with the label.</summary>

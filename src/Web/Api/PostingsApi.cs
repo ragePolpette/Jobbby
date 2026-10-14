@@ -4,7 +4,7 @@ namespace Web.Api;
 
 public static class PostingsApi
 {
-    private static readonly IReadOnlyDictionary<string, string> Decisions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, string> Decisions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         ["approve"] = ApplicationOutcomes.Approved,
         ["reject"] = ApplicationOutcomes.Rejected,

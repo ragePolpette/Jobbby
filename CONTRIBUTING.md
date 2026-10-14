@@ -12,11 +12,12 @@
 Requires the .NET 8 SDK.
 
 ```bash
-dotnet build GraphEngine.sln
-dotnet test GraphEngine.sln
+dotnet build Jobbby.sln
+dotnet test Jobbby.sln
+dotnet format Jobbby.sln --verify-no-changes
 ```
 
-Tests use mock LLM, job source and gateway implementations and do not need real credentials. No linter or formatter is configured.
+Tests use mock LLM and job source implementations and do not need real credentials. `Directory.Build.props` enables nullable reference types, the `latest-recommended` analyzers and the code style rules of `.editorconfig`, and treats every warning as an error. CI (`.github/workflows/ci.yml`) runs restore, build, format check and tests on pushes to `main` and on pull requests.
 
 ## Security rules
 

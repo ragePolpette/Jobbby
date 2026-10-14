@@ -9,7 +9,7 @@ namespace Host;
 /// </summary>
 public static class CliCommands
 {
-    private static readonly IReadOnlyDictionary<string, string> Actions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, string> Actions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         ["approve"] = ApplicationOutcomes.Approved,
         ["reject"] = ApplicationOutcomes.Rejected,
@@ -21,7 +21,7 @@ public static class CliCommands
         var pending = new ApplicationLedger.ApplicationLedger(dataDir.ApplicationsPath, extraCompanySuffixes).Pending();
         if (pending.Count == 0)
         {
-            output.WriteLine("Nessun annuncio da decidere.");
+            output.WriteLine(CliText.NothingPending);
             return 0;
         }
 
@@ -33,7 +33,7 @@ public static class CliCommands
                 output.WriteLine($"    {record.Reason}");
         }
 
-        output.WriteLine($"{pending.Count} da decidere. Usa: decide <postingId> approve|reject|applied");
+        output.WriteLine(CliText.PendingCount(pending.Count));
         return 0;
     }
 
@@ -41,7 +41,7 @@ public static class CliCommands
     {
         if (!Actions.TryGetValue(action, out var outcome))
         {
-            error.WriteLine($"Azione sconosciuta: '{action}'. Valori ammessi: {string.Join(", ", Actions.Keys)}.");
+            error.WriteLine(CliText.UnknownAction(action, Actions.Keys));
             return 2;
         }
 
@@ -49,7 +49,7 @@ public static class CliCommands
         var decided = ledger.Decide(postingId, outcome, $"Deciso dall'utente: {action}.");
         if (decided is null)
         {
-            error.WriteLine($"Annuncio sconosciuto: '{postingId}'. Usa 'pending' per vedere gli id.");
+            error.WriteLine(CliText.UnknownPosting(postingId));
             return 2;
         }
 

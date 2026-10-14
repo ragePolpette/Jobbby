@@ -1,7 +1,8 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\CvExtraction\CvExtraction.csproj" />
+    <ProjectReference Include="..\GraphEngine\GraphEngine.csproj" />
+    <ProjectReference Include="..\Jobbby.Core\Jobbby.Core.csproj" />
     <ProjectReference Include="..\Reporting\Reporting.csproj" />
   </ItemGroup>
 

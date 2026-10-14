@@ -2,17 +2,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GraphEngine\GraphEngine.csproj" />
-    <!-- Config, ApplicationLedger and Notifications are compiled into CvExtraction.csproj
-         (they have no dedicated project); referencing it is how Host reaches their types. -->
+    <ProjectReference Include="..\Jobbby.Core\Jobbby.Core.csproj" />
     <ProjectReference Include="..\CvExtraction\CvExtraction.csproj" />
-    <ProjectReference Include="..\Discovery\Discovery.csproj" />
     <ProjectReference Include="..\JobPostings\JobPostings.csproj" />
     <ProjectReference Include="..\Matching\Matching.csproj" />
     <ProjectReference Include="..\Reporting\Reporting.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\Config\sources.json" Link="sources.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Jobbby.Core\Config\sources.json" Link="sources.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

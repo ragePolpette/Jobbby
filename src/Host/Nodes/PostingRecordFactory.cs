@@ -10,6 +10,7 @@ public static class PostingRecordFactory
     public static ApplicationRecord Create(GraphState state, string outcome, string reason)
     {
         var posting = state.Get<JobPosting>(NormalizeJobPostingNode.JobPostingStateKey);
+        var raw = state.Get<RawPosting>(NormalizeJobPostingNode.RawPostingStateKey);
         var company = posting?.Company ?? state.Get<string>(JobApplicationStateKeys.Company) ?? string.Empty;
         var title = posting?.Title ?? state.Get<string>(JobApplicationStateKeys.Title) ?? string.Empty;
         var applyUrl = posting?.ApplyUrl ?? state.Get<string>(JobApplicationStateKeys.SourceUrl);
@@ -28,6 +29,8 @@ public static class PostingRecordFactory
         {
             RunId = state.Get<string>(JobApplicationStateKeys.RunId),
             SourceName = state.Get<string>(JobApplicationStateKeys.SourceName),
+            SourceCompany = raw?.Company,
+            SourcePostingId = raw?.SourceId,
             ApplyUrl = applyUrl,
             Excerpt = posting?.Description,
             RequiredSkills = posting?.RequiredSkills,

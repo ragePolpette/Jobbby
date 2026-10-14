@@ -11,6 +11,40 @@ public class RunStoreTests
     private static readonly SourceDefinition Adzuna = new() { Name = "Adzuna", BaseUrl = "https://api.adzuna.com", Type = "api" };
 
     [Fact]
+    public async Task Run_RecordsOnlyTheAllowlistedSettings()
+    {
+        using var tmp = new TempDir();
+        var dataDir = new DataDir(tmp.Root);
+        var settings = Settings() with { Presentation = new PresentationSettings { Closing = "Call me at +39 333 0000000" } };
+
+        var summary = await Runner(dataDir, new MockJobSource(_ => Array.Empty<RawPosting>())).RunAsync(settings, Cv(), RunMode.Dry, new Progress<RunEvent>(), CancellationToken.None);
+
+        var json = File.ReadAllText(summary.RunPath);
+        Assert.DoesNotContain("333 0000000", json);
+        Assert.DoesNotContain("presentation", json, StringComparison.OrdinalIgnoreCase);
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        var recorded = document.RootElement.EnumerateObject().First(p => p.Name.Equals("settings", StringComparison.OrdinalIgnoreCase)).Value;
+        Assert.Equal(
+            new[] { "area", "dedupe", "dryRun", "evaluation", "llm", "remoteSweep", "salary", "searches" },
+            recorded.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(new[] { "model", "provider" }, recorded.GetProperty("llm").EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void OlderRunFiles_WithEverySetting_StillLoad()
+    {
+        using var tmp = new TempDir();
+        var dataDir = new DataDir(tmp.Root);
+        Directory.CreateDirectory(dataDir.RunsDirectory);
+        File.WriteAllText(Path.Combine(dataDir.RunsDirectory, "old-run.json"),
+            """{"runId":"old-run","mode":"normal","status":"Completed","settings":{"area":{"country":"it"},"presentation":{"closing":"x"}}}""");
+
+        var run = new RunStore(dataDir).Load("old-run")!;
+
+        Assert.Equal("it", run.Settings.Area.Country);
+    }
+
+    [Fact]
     public async Task DryRun_WritesACompleteRunFile_AndNoLedger()
     {
         using var tmp = new TempDir();
@@ -140,7 +174,7 @@ public class RunStoreTests
     private sealed class RoutedLlm : ILlmClient
     {
         public Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default) =>
-            Task.FromResult(prompt.Contains("Estrai le seguenti informazioni", StringComparison.Ordinal)
+            Task.FromResult(prompt.Contains("Extract the following information", StringComparison.Ordinal)
                 ? """{"seniorityLevel":"","requiredSkills":["Triage"],"workMode":"onsite"}"""
                 : """{"category":"Borderline","reasoning":"r","confidence":0.5}""");
     }

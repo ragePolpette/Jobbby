@@ -78,6 +78,9 @@ public sealed class RunManager(
     IConfiguration configuration,
     ILogger<RunManager> logger)
 {
+    private static readonly Action<ILogger, string, Exception?> LogRunFailed =
+        LoggerMessage.Define<string>(LogLevel.Error, new EventId(1, "RunFailed"), "Run {RunId} failed");
+
     private readonly object _lock = new();
     private ActiveRun? _current;
 
@@ -127,13 +130,13 @@ public sealed class RunManager(
         {
             var deps = dependencies.Create(settings, run.Mode, ledgers.Get);
             var cv = await CvLoader.LoadAsync(cvPath, deps.Llm, run.Cancellation.Token);
-            var runner = new JobbbyRunner(dataDir, deps, discoveryConfigured: !string.IsNullOrWhiteSpace(configuration["Jobbby:DiscoveryConfig"]));
+            var runner = new JobbbyRunner(dataDir, deps);
             var summary = await runner.RunAsync(settings, cv, run.Mode, new ForwardingProgress(run), run.Cancellation.Token, run.RunId);
             run.Complete(summary);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Run {RunId} failed", run.RunId);
+            LogRunFailed(logger, run.RunId, ex);
             run.Add(new RunEvent("failed", ex.Message, DateTimeOffset.UtcNow));
             run.Fail(ex.Message);
         }

@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Config;
 using Host;
+using JobPostings;
 using Web.Api;
 
 namespace Web;
@@ -8,11 +9,13 @@ namespace Web;
 /// <summary>
 /// The web host: one process per DataDir (the lock is taken at startup and held until exit),
 /// the same first-start migration as the CLI, only local hosts accepted, and the request guard
-/// in front of every state-changing API.
+/// in front of every state-changing API. The outgoing HTTP client logs nothing: Adzuna takes
+/// its credentials in the query string, and the default client logging writes request URIs.
 /// </summary>
 public static class JobbbyWeb
 {
     public const string DefaultUrl = "http://0.0.0.0:5080";
+    public const string HttpClientName = "jobbby";
 
     public static WebApplication Build(string[] args)
     {
@@ -21,8 +24,7 @@ public static class JobbbyWeb
         if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]) && string.IsNullOrWhiteSpace(builder.Configuration["ASPNETCORE_URLS"]))
             builder.WebHost.UseUrls(DefaultUrl);
         builder.Configuration["AllowedHosts"] ??= "localhost;127.0.0.1";
-
-        SourceWhitelist.Configuration = builder.Configuration;
+        builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
         var dataDir = DataDir.FromConfiguration(builder.Configuration);
         var dataDirLock = DataDirLock.Acquire(dataDir);
         LegacyMigration.Run(dataDir, new[] { builder.Configuration["Jobbby:LegacyDir"], AppContext.BaseDirectory }.OfType<string>());
@@ -39,7 +41,9 @@ public static class JobbbyWeb
         builder.Services.AddSingleton(new CvStore(dataDir));
         builder.Services.AddSingleton<Web.Api.CvGate>();
         builder.Services.AddSingleton<IRunDependenciesFactory, DefaultRunDependenciesFactory>();
-        builder.Services.AddHttpClient("jobbby");
+        builder.Services.AddHttpClient(HttpClientName)
+            .RemoveAllLoggers()
+            .AddHttpMessageHandler(() => new SecretRedactingHandler());
         builder.Services.ConfigureHttpJsonOptions(options =>
         {
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());

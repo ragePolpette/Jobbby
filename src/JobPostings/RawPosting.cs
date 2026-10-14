@@ -8,6 +8,7 @@ namespace JobPostings;
 /// PostedAt is likewise optional and purely internal bookkeeping: it isn't normalized
 /// into JobPosting, it exists only so a caller can pick the truly most recent posting
 /// out of a batch (e.g. for a source cursor) instead of guessing from response order.
+/// SourceId is the source's own id of the ad, when it exposes one.
 /// </summary>
 public sealed record RawPosting(
     string RawTitle,
@@ -18,4 +19,5 @@ public sealed record RawPosting(
     DateTimeOffset? PostedAt = null,
     string? Location = null,
     decimal? SalaryMaximum = null,
-    SearchSweep Sweep = SearchSweep.Local);
+    SearchSweep Sweep = SearchSweep.Local,
+    string? SourceId = null);

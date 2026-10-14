@@ -76,7 +76,7 @@ public static class CvApi
         // POST, not GET: every preview spends an LLM call, and a GET could be triggered by any page (an <img>)
         // without the RequestGuard header.
         app.MapPost("/api/cv/derived-queries", async (CvStore store, SettingsService settingsService,
-            IRunDependenciesFactory dependencies, CancellationToken cancellationToken) =>
+            IRunDependenciesFactory dependencies, IConfiguration configuration, CancellationToken cancellationToken) =>
         {
             var cv = store.Read().Cv;
             if (cv is null)
@@ -98,6 +98,7 @@ public static class CvApi
                     },
                     cv,
                     dependencies.CreateLlm(settings),
+                    GraphEngine.PromptLanguages.Parse(configuration["Llm:Language"]),
                     cancellationToken);
                 return Results.Json(new { enabled = true, configured = plan.ConfiguredQueries, derived = plan.DerivedQueries, error = plan.DerivationError });
             }
@@ -138,11 +139,11 @@ public static class CvApi
 /// </summary>
 public sealed class CvGate
 {
-    private readonly SemaphoreSlim _semaphore = new(1, 1);
+    private int _busy;
 
     public async Task<IResult> RunAsync(Func<Task<IResult>> work)
     {
-        if (!_semaphore.Wait(0))
+        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
             return CvApi.Error(StatusCodes.Status409Conflict, "C'è già un caricamento o un'estrazione del CV in corso.");
         try
         {
@@ -163,7 +164,7 @@ public sealed class CvGate
         }
         finally
         {
-            _semaphore.Release();
+            Volatile.Write(ref _busy, 0);
         }
     }
 }

@@ -10,6 +10,8 @@ namespace Web;
 public static class RequestGuard
 {
     public const string HeaderName = "X-Jobbby-Request";
+    public const string MissingHeaderMessage = "Request rejected: the " + HeaderName + " header is missing.";
+    public const string ForeignOriginMessage = "Request rejected: the origin differs from the app's own.";
 
     public static IApplicationBuilder UseRequestGuard(this IApplicationBuilder app) =>
         app.Use(async (context, next) =>
@@ -23,14 +25,14 @@ public static class RequestGuard
 
             if (request.Headers[HeaderName] != "1")
             {
-                await Reject(context, $"Richiesta rifiutata: manca l'header {HeaderName}.");
+                await Reject(context, MissingHeaderMessage);
                 return;
             }
 
             var origin = request.Headers.Origin.ToString();
             if (origin.Length > 0 && !string.Equals(origin, $"{request.Scheme}://{request.Host}", StringComparison.OrdinalIgnoreCase))
             {
-                await Reject(context, "Richiesta rifiutata: origine diversa da quella dell'app.");
+                await Reject(context, ForeignOriginMessage);
                 return;
             }
 

@@ -50,6 +50,8 @@ dotnet user-secrets set "Adzuna:AppKey" "..."
 
 Con `llm.provider` = `openai` servono anche `Llm:Endpoint` (URL completo di chat/completions) e `Llm:ApiKey`.
 
+I prompt sono in inglese per impostazione predefinita: con CV e annunci in italiano impostare `Llm:Language` = `it` (ad esempio `Llm__Language=it`). `Llm:MaxConcurrency` limita le chiamate LLM in parallelo (default 4 con `openai`, 2 con `claude-cli`). I dettagli sono in [configuration.md](configuration.md).
+
 ### LLM tramite Claude Code (`claude -p`)
 
 Con `llm.provider` = `claude-cli` si usa il CLI di Claude Code già autenticato, senza endpoint né API key. Il CLI viene lanciato senza strumenti, server MCP né impostazioni utente/progetto, con un timeout di 120 secondi e al massimo 2 processi in parallelo. Opzioni di configurazione: `Llm:ClaudePath` (default `claude`), `Llm:TimeoutSeconds`, `Llm:MaxConcurrency`. Ogni chiamata avvia un processo, quindi è più lento dell'API diretta.
@@ -90,4 +92,4 @@ dotnet run --project src/Host/Host.csproj -- pending
 dotnet run --project src/Host/Host.csproj -- decide <postingId> approve|reject|applied
 ```
 
-Discovery non fa parte delle run: se `Jobbby__DiscoveryConfig` è impostato viene ignorato con un avviso. L'integrazione Telegram resta nel codice ma le run non la usano.
+Discovery e l'integrazione Telegram sono state rimosse dal codice.

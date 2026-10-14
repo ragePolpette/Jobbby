@@ -5,6 +5,8 @@ namespace Web.Api;
 
 public static class SettingsApi
 {
+    private static readonly JsonSerializerOptions ReadOptions = new() { PropertyNameCaseInsensitive = true };
+
     /// <summary>Secrets whose presence the UI shows; their values never leave the server.</summary>
     private static readonly string[] SourceSecretKeys = { "Adzuna:AppId", "Adzuna:AppKey" };
 
@@ -20,7 +22,7 @@ public static class SettingsApi
             JobbbySettings? candidate;
             try
             {
-                candidate = await JsonSerializer.DeserializeAsync<JobbbySettings>(request.Body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                candidate = await JsonSerializer.DeserializeAsync<JobbbySettings>(request.Body, ReadOptions);
             }
             catch (JsonException ex)
             {

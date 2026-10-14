@@ -66,28 +66,59 @@ public class Pr3ReviewFixTests
     }
 
     [Fact]
-    public async Task DryRun_SkipsPostingsAlreadyInTheLedger_EvenWhenTheCompanyComesFromTheLlm()
+    public async Task CompanyFromTheLlm_NeverEntersTheIdentity_SoItCannotHideAPostingBehindAnotherOne()
     {
         using var tmp = new TempDir();
         var dataDir = new DataDir(tmp.Root);
         var key = PostingIdentity.Key("Clinic", "Nurse");
-        new ApplicationLedger.ApplicationLedger(dataDir.ApplicationsPath).RecordOutcome(
-            new ApplicationRecord(key, "Clinic", "Nurse", null, DateTimeOffset.UtcNow, ApplicationOutcomes.Rejected));
-        var before = File.ReadAllText(dataDir.ApplicationsPath);
+        var seeded = new ApplicationLedger.ApplicationLedger(dataDir.ApplicationsPath);
+        seeded.RecordOutcome(new ApplicationRecord(key, "Clinic", "Nurse", null, DateTimeOffset.UtcNow, ApplicationOutcomes.Rejected));
+        seeded.Flush();
         var source = new MockJobSource(_ => new[] { new RawPosting("Nurse", "Pronto soccorso", "https://x/9", "api.adzuna.com", "", DateTimeOffset.UtcNow) });
-        var runner = new JobbbyRunner(dataDir, new RunDependencies(source, new CompanyFromLlm(), new[] { new SourceDefinition { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" } }));
-        var d = JobbbySettings.Default;
-        var settings = d with { Area = d.Area with { Country = "de" }, Searches = d.Searches with { Queries = new() { "nurse" }, DeriveFromCv = false } };
+        var runner = new JobbbyRunner(dataDir, new RunDependencies(source, new CompanyFromLlm("Clinic"), Sources));
 
-        var summary = await runner.RunAsync(settings, new CvData { Name = "C", Skills = new() { "Triage" } }, RunMode.Dry, new Progress<RunEvent>(), CancellationToken.None);
+        var summary = await runner.RunAsync(Settings(), Cv, RunMode.Dry, new Progress<RunEvent>(), CancellationToken.None);
+
+        Assert.Equal(0, summary.Report.SkippedDuplicate);
+        Assert.Equal(PostingStatus.Evaluated, Assert.Single(LoadPostings(dataDir, summary.RunId)).Status);
+    }
+
+    [Fact]
+    public async Task PostingWithoutCompany_IsRecognizedInTheNextRun_WhateverTheLlmAnswers_WithoutCallingIt()
+    {
+        using var tmp = new TempDir();
+        var dataDir = new DataDir(tmp.Root);
+        var source = new MockJobSource(_ => new[] { new RawPosting("Nurse", "Pronto soccorso", "https://x/9?utm=a", "api.adzuna.com", "", DateTimeOffset.UtcNow, SourceId: "42") });
+
+        await new JobbbyRunner(dataDir, new RunDependencies(source, new CompanyFromLlm("Clinic"), Sources))
+            .RunAsync(Settings(), Cv, RunMode.Normal, new Progress<RunEvent>(), CancellationToken.None);
+        var secondLlm = new CompanyFromLlm("Another Clinic");
+        var summary = await new JobbbyRunner(dataDir, new RunDependencies(source, secondLlm, Sources))
+            .RunAsync(Settings(), Cv, RunMode.Normal, new Progress<RunEvent>(), CancellationToken.None);
 
         Assert.Equal(1, summary.Report.SkippedDuplicate);
-        Assert.Equal(before, File.ReadAllText(dataDir.ApplicationsPath));
+        Assert.Equal(0, secondLlm.Calls);
+        var record = Assert.Single(new ApplicationLedger.ApplicationLedger(dataDir.ApplicationsPath).Pending());
+        Assert.Equal("Clinic", record.Company);
+        Assert.Equal(string.Empty, record.SourceCompany);
+        Assert.Equal("42", record.SourcePostingId);
     }
+
+    private static readonly SourceDefinition[] Sources = { new() { Name = "Adzuna", BaseUrl = "https://api.adzuna.com" } };
+
+    private static readonly CvData Cv = new() { Name = "C", Skills = new() { "Triage" } };
+
+    private static JobbbySettings Settings()
+    {
+        var d = JobbbySettings.Default;
+        return d with { Area = d.Area with { Country = "de" }, Searches = d.Searches with { Queries = new() { "nurse" }, DeriveFromCv = false } };
+    }
+
+    private static List<RunPosting> LoadPostings(DataDir dataDir, string runId) => new RunStore(dataDir).Load(runId)!.Postings;
 
     private static async Task<GraphState> RunGraphAsync(ApplicationLedger.ApplicationLedger ledger, string applyUrl)
     {
-        var definition = HostGraph.Build(null, new Notifications.PendingApprovalRegistry(), ledger,
+        var definition = HostGraph.Build(ledger,
             new MockLlmClient("""{"category":"Borderline","reasoning":"r","confidence":0.4}"""),
             new CvData { Name = "C", Skills = new() { "Triage" } }, new RunStatsCollector());
         var posting = new JobPosting("Backend Developer", "", "", new List<string> { "Triage" }, "d", "https://x", applyUrl, ApplyChannels.ExternalPlatform);
@@ -100,11 +131,18 @@ public class Pr3ReviewFixTests
         return state;
     }
 
-    private sealed class CompanyFromLlm : ILlmClient
+    private sealed class CompanyFromLlm(string company) : ILlmClient
     {
-        public Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default) =>
-            Task.FromResult(prompt.Contains("Estrai le seguenti informazioni", StringComparison.Ordinal)
-                ? """{"company":"Clinic","seniorityLevel":"","requiredSkills":["Triage"]}"""
-                : """{"category":"Strong","reasoning":"r","confidence":0.9}""");
+        private int _calls;
+
+        public int Calls => _calls;
+
+        public Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _calls);
+            return Task.FromResult(prompt.Contains("Extract the following information", StringComparison.Ordinal)
+                ? $$"""{"company":"{{company}}","seniorityLevel":"","requiredSkills":["Triage"]}"""
+                : """{"category":"Borderline","reasoning":"r","confidence":0.4}""");
+        }
     }
 }
