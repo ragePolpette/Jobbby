@@ -64,6 +64,78 @@ public class OpenAiCompatibleLlmClientTests
         Assert.Equal(2, handler.RequestCount);
     }
 
+    [Fact]
+    public async Task CompleteAsync_WaitsTheServersRetryAfter_BeforeRetrying()
+    {
+        var limited = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        limited.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(7));
+        var handler = new ScriptedHandler(limited, Ok("done"));
+        using var httpClient = new HttpClient(handler);
+        var time = new RecordingTimeProvider();
+        var client = new OpenAiCompatibleLlmClient(httpClient, "https://llm.example/v1/chat/completions", "secret", "test-model",
+            retryDelay: TimeSpan.FromMilliseconds(100), timeProvider: time);
+
+        var result = await client.CompleteAsync("prompt");
+
+        Assert.Equal("done", result);
+        Assert.Equal(TimeSpan.FromSeconds(7), Assert.Single(time.Delays));
+    }
+
+    [Fact]
+    public async Task CompleteAsync_RetryAfterBeyondTheLimit_FailsWithoutWaiting()
+    {
+        var limited = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        limited.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromMinutes(10));
+        var handler = new ScriptedHandler(limited, Ok("done"));
+        using var httpClient = new HttpClient(handler);
+        var time = new RecordingTimeProvider();
+        var client = new OpenAiCompatibleLlmClient(httpClient, "https://llm.example/v1/chat/completions", "secret", "test-model",
+            maxRetryAfter: TimeSpan.FromSeconds(30), timeProvider: time);
+
+        var error = await Assert.ThrowsAsync<LlmException>(() => client.CompleteAsync("prompt"));
+
+        Assert.Contains("600s", error.Message);
+        Assert.Equal(1, handler.RequestCount);
+        Assert.Empty(time.Delays);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_BacksOffExponentiallyWithJitter()
+    {
+        var handler = new ScriptedHandler(
+            new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+            new HttpResponseMessage(HttpStatusCode.BadGateway),
+            new HttpResponseMessage(HttpStatusCode.InternalServerError),
+            Ok("done"));
+        using var httpClient = new HttpClient(handler);
+        var time = new RecordingTimeProvider();
+        var client = new OpenAiCompatibleLlmClient(httpClient, "https://llm.example/v1/chat/completions", "secret", "test-model",
+            maxAttempts: 4, retryDelay: TimeSpan.FromMilliseconds(100), timeProvider: time);
+
+        Assert.Equal("done", await client.CompleteAsync("prompt"));
+
+        var delays = time.Delays.Select(delay => delay.TotalMilliseconds).ToList();
+        Assert.Equal(3, delays.Count);
+        Assert.InRange(delays[0], 50, 100);
+        Assert.InRange(delays[1], 100, 200);
+        Assert.InRange(delays[2], 200, 400);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_NeverExceedsMaxConcurrency()
+    {
+        var handler = new ConcurrencyProbe();
+        using var httpClient = new HttpClient(handler);
+        var client = new OpenAiCompatibleLlmClient(httpClient, "https://llm.example/v1/chat/completions", "secret", "test-model",
+            maxConcurrency: 2);
+
+        var calls = Enumerable.Range(0, 10).Select(i => client.CompleteAsync($"prompt {i}")).ToList();
+        await Task.WhenAll(calls);
+
+        Assert.Equal(2, handler.MaxInFlight);
+        Assert.Equal(10, handler.Total);
+    }
+
     private static OpenAiCompatibleLlmClient NewClient(
         HttpClient httpClient,
         int maxAttempts = 3,
@@ -114,6 +186,30 @@ public class OpenAiCompatibleLlmClientTests
             LastRequest = request;
             LastBody = await request.Content!.ReadAsStringAsync(cancellationToken);
             return await _responses.Dequeue()(cancellationToken);
+        }
+    }
+
+    private sealed class ConcurrencyProbe : HttpMessageHandler
+    {
+        private int _inFlight;
+        private int _maxInFlight;
+        private int _total;
+
+        public int MaxInFlight => Volatile.Read(ref _maxInFlight);
+        public int Total => Volatile.Read(ref _total);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var now = Interlocked.Increment(ref _inFlight);
+            int seen;
+            while (now > (seen = Volatile.Read(ref _maxInFlight)) && Interlocked.CompareExchange(ref _maxInFlight, now, seen) != seen)
+            {
+            }
+
+            await Task.Delay(20, cancellationToken);
+            Interlocked.Decrement(ref _inFlight);
+            Interlocked.Increment(ref _total);
+            return Ok("ok");
         }
     }
 }

@@ -43,6 +43,7 @@ public class SecurityTests : IDisposable
         var response = await client.PostAsync("/api/runs", Json("""{"mode":"dry"}"""));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains(RequestGuard.MissingHeaderMessage, await response.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -66,6 +67,7 @@ public class SecurityTests : IDisposable
         var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains("origin differs", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]

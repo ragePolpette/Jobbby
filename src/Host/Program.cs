@@ -3,7 +3,6 @@ using CvExtraction;
 using Host;
 using JobPostings;
 using Microsoft.Extensions.Configuration;
-using Notifications;
 
 // Thin CLI over JobbbyRunner: everything a run needs comes from the DataDir (settings.json,
 // CV) plus secrets from user-secrets / environment variables.
@@ -11,7 +10,6 @@ var configuration = new ConfigurationBuilder()
     .AddEnvironmentVariables()
     .AddUserSecrets<Program>()
     .Build();
-SourceWhitelist.Configuration = configuration;
 
 DataDir dataDir;
 try
@@ -42,10 +40,11 @@ using (dataDirLock)
         return await RunCliAsync(configuration, dataDir, args);
     }
     catch (Exception ex) when (ex is SettingsFileException or SettingsValidationException or InvalidOperationException
-                                   or NotSupportedException or FileNotFoundException or System.Text.Json.JsonException)
+                                   or NotSupportedException or FileNotFoundException or System.Text.Json.JsonException
+                                   or GraphEngine.LlmException)
     {
         // Configuration and environment problems: the message says what to fix, a stack trace would bury it.
-        Console.Error.WriteLine($"Errore: {ex.Message}");
+        Console.Error.WriteLine(CliText.Error(ex.Message));
         return 2;
     }
 }
@@ -59,17 +58,17 @@ static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir
 
     var runs = new RunStore(dataDir);
     foreach (var runId in runs.RecoverInterrupted())
-        Console.WriteLine($"Run {runId} era rimasta in corso: segnata come interrotta.");
+        Console.WriteLine(CliText.RecoveredInterruptedRun(runId));
     var imported = runs.ImportLegacyReports();
     if (imported.Imported > 0)
-        Console.WriteLine($"Importati {imported.Imported} riepiloghi da run-reports.json in {dataDir.RunsDirectory}.");
+        Console.WriteLine(CliText.ImportedLegacyReports(imported.Imported, dataDir.RunsDirectory));
     if (imported.Warning is not null)
         Console.Error.WriteLine(imported.Warning);
 
     // Only an explicitly configured searches.json seeds a new settings.json: the repository ships none.
     var settingsResult = SettingsStore.LoadOrCreate(dataDir.SettingsPath, configuration["Jobbby:SearchesConfig"]);
     if (settingsResult.Created)
-        Console.WriteLine($"Creato {dataDir.SettingsPath} con le impostazioni predefinite.");
+        Console.WriteLine(CliText.CreatedSettings(dataDir.SettingsPath));
     foreach (var note in settingsResult.Notes)
         Console.WriteLine(note);
     var settings = settingsResult.Settings;
@@ -82,26 +81,26 @@ static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir
         case "decide" when args.Length == 3:
             return CliCommands.Decide(dataDir, args[1], args[2], Console.Out, Console.Error, settings.Dedupe.ExtraCompanySuffixes);
         case "decide":
-            Console.Error.WriteLine("Uso: decide <postingId> approve|reject|applied");
+            Console.Error.WriteLine(CliText.Usage);
             return 2;
         case { } unknown:
-            Console.Error.WriteLine($"Comando sconosciuto: '{unknown}'. Comandi: pending, decide <postingId> approve|reject|applied (senza argomenti: una run).");
+            Console.Error.WriteLine(CliText.UnknownCommand(unknown));
             return 2;
     }
 
     var errors = SettingsValidator.Validate(settings, forRun: true);
     if (errors.Count > 0)
     {
-        Console.Error.WriteLine($"Impostazioni non valide in {dataDir.SettingsPath}:");
+        Console.Error.WriteLine(CliText.InvalidSettings(dataDir.SettingsPath));
         foreach (var error in errors)
             Console.Error.WriteLine($"  {error.Field}: {error.Message}");
         return 2;
     }
 
     var mode = DryRunOptions.FromConfiguration(configuration, baseDirectory).Enabled ? RunMode.Dry : RunMode.Normal;
-    using var httpClient = new HttpClient();
+    using var httpClient = new HttpClient(new SecretRedactingHandler(new SocketsHttpHandler()));
     var llm = LlmClientFactory.Create(settings.Llm, configuration, httpClient);
-    Console.WriteLine($"LLM: {llm.Provider} {llm.Model}");
+    Console.WriteLine(CliText.Llm(llm.Provider, llm.Model));
 
     var cvPath = CvLocator.Find(dataDir, configuration);
     if (cvPath is null)
@@ -112,31 +111,30 @@ static async Task<int> RunCliAsync(IConfiguration configuration, DataDir dataDir
 
     var cvResult = await CvLoader.LoadWithNotesAsync(cvPath, llm.Client);
     foreach (var field in cvResult.IgnoredFields)
-        Console.WriteLine($"Campo del CV ignorato, ora si imposta in settings.json: {field}");
-    Console.WriteLine($"CV: {cvResult.Cv.Name} ({cvResult.Cv.YearsExperience} anni) da {cvPath}");
+        Console.WriteLine(CliText.IgnoredCvField(field));
+    Console.WriteLine(CliText.Cv(cvResult.Cv.Name, cvResult.Cv.YearsExperience, cvPath));
 
     var sources = SourceWhitelist.LoadFromFile(Path.Combine(baseDirectory, "sources.json"));
-    var jobSource = AdzunaJobSource.FromEnvironment(
+    var jobSource = AdzunaJobSource.FromConfiguration(
         httpClient,
+        configuration,
         settings.Area.Country!,
         resultsPerPage: mode == RunMode.Dry ? settings.DryRun.MaxPostingsPerQuery : 10,
         minimumPlausibleSalary: settings.Salary.MinimumPlausible);
-    var discoveryConfigured = !string.IsNullOrWhiteSpace(configuration["Jobbby:DiscoveryConfig"]);
 
     using var cancellation = new CancellationTokenSource();
     Console.CancelKeyPress += (_, eventArgs) =>
     {
         eventArgs.Cancel = true;
-        Console.Error.WriteLine("Interruzione richiesta: fermo le chiamate in corso...");
+        Console.Error.WriteLine(CliText.InterruptRequested);
         cancellation.Cancel();
     };
 
-    var runner = new JobbbyRunner(dataDir, new RunDependencies(jobSource, llm.Client, sources), discoveryConfigured);
+    var runner = new JobbbyRunner(dataDir, new RunDependencies(jobSource, llm.Client, sources, Language: llm.Language));
     var progress = new ConsoleProgress();
     var summary = await runner.RunAsync(settings, cvResult.Cv, mode, progress, cancellation.Token);
-    Console.WriteLine($"Chiamate Adzuna: {summary.AdzunaCalls}");
-
-    Console.WriteLine($"Run salvata in {summary.RunPath}");
+    Console.WriteLine(CliText.AdzunaCalls(summary.AdzunaCalls));
+    Console.WriteLine(CliText.RunSaved(summary.RunPath));
 
     return summary.Cancelled ? 130 : 0;
 }

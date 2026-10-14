@@ -60,9 +60,9 @@ public class NonTechnicalProfileEndToEndTests
         public Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default)
         {
             Prompts.Enqueue(prompt);
-            if (prompt.Contains("query di ricerca", StringComparison.Ordinal))
+            if (prompt.Contains("search queries", StringComparison.Ordinal))
                 return Task.FromResult("""{"queries":["Pflegefachkraft"]}""");
-            if (prompt.Contains("Estrai le seguenti informazioni", StringComparison.Ordinal))
+            if (prompt.Contains("Extract the following information", StringComparison.Ordinal))
                 return Task.FromResult("""{"seniorityLevel":"Fachkraft","requiredSkills":["Intensivpflege"],"workMode":"onsite","minYearsExperience":2}""");
             return Task.FromResult("""{"category":"Strong","reasoning":"Erfahrung in der Intensivpflege passt.","confidence":0.8}""");
         }

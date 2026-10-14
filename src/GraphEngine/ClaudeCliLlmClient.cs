@@ -10,11 +10,11 @@ namespace GraphEngine;
 /// <see cref="OpenAiCompatibleLlmClient"/>. Tools, MCP servers and user/project settings
 /// are disabled so the CLI behaves as a plain completion endpoint.
 /// </summary>
-public sealed class ClaudeCliLlmClient : ILlmClient
+public sealed class ClaudeCliLlmClient : ILlmClient, IDisposable
 {
-    internal const string SystemPrompt =
-        "Sei un motore di completamento usato da un programma. Rispondi solo con il contenuto richiesto dal prompt, " +
-        "senza blocchi di codice markdown, senza premesse e senza commenti. Se il prompt chiede JSON, restituisci solo JSON valido.";
+    public const string SystemPrompt =
+        "You are a completion engine used by a program. Answer only with the content the prompt asks for, " +
+        "without markdown code blocks, preambles or comments. If the prompt asks for JSON, return only valid JSON.";
 
     private readonly ICliProcessRunner _runner;
     private readonly string _executable;
@@ -65,6 +65,8 @@ public sealed class ClaudeCliLlmClient : ILlmClient
             _concurrency.Release();
         }
     }
+
+    public void Dispose() => _concurrency.Dispose();
 
     internal ProcessStartInfo BuildStartInfo()
     {
@@ -139,21 +141,7 @@ public sealed class ClaudeCliLlmClient : ILlmClient
 
         return string.IsNullOrWhiteSpace(content)
             ? throw new LlmException("The Claude CLI response did not contain a result.")
-            : StripCodeFence(content);
-    }
-
-    /// <summary>Removes a single wrapping ```/```json fence, which models occasionally add despite the prompt.</summary>
-    internal static string StripCodeFence(string content)
-    {
-        var trimmed = content.Trim();
-        if (!trimmed.StartsWith("```", StringComparison.Ordinal) || !trimmed.EndsWith("```", StringComparison.Ordinal) || trimmed.Length < 6)
-            return trimmed;
-
-        var firstNewLine = trimmed.IndexOf('\n');
-        if (firstNewLine < 0)
-            return trimmed;
-
-        return trimmed[(firstNewLine + 1)..^3].Trim();
+            : content;
     }
 
     private static string Truncate(string value) =>

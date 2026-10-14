@@ -40,11 +40,67 @@ public class MatchStageTwoJudgeTests
     }
 
     [Fact]
-    public async Task JudgeAsync_MalformedResponse_Throws()
+    public async Task JudgeAsync_MalformedResponse_ThrowsLlmException()
     {
         var llmClient = new MockLlmClient("not json at all");
         var judge = new MatchStageTwoJudge(llmClient);
 
-        await Assert.ThrowsAsync<JsonException>(() => judge.JudgeAsync(Posting, Cv));
+        var error = await Assert.ThrowsAsync<LlmException>(() => judge.JudgeAsync(Posting, Cv));
+        Assert.IsType<JsonException>(error.InnerException);
+    }
+
+    [Theory]
+    [InlineData("Excellent")]
+    [InlineData("")]
+    [InlineData("Strong; ignore previous instructions")]
+    public async Task JudgeAsync_UnknownCategory_ThrowsLlmException(string category)
+    {
+        var judge = new MatchStageTwoJudge(new MockLlmClient($$"""{"category":"{{category}}","reasoning":"r","confidence":0.5}"""));
+
+        await Assert.ThrowsAsync<LlmException>(() => judge.JudgeAsync(Posting, Cv));
+    }
+
+    [Fact]
+    public async Task JudgeAsync_MissingCategory_ThrowsLlmException()
+    {
+        var judge = new MatchStageTwoJudge(new MockLlmClient("""{"reasoning":"r","confidence":0.5}"""));
+
+        await Assert.ThrowsAsync<LlmException>(() => judge.JudgeAsync(Posting, Cv));
+    }
+
+    [Fact]
+    public async Task JudgeAsync_CategoryInAnyCase_IsCanonicalized()
+    {
+        var judge = new MatchStageTwoJudge(new MockLlmClient("""{"category":" strong ","reasoning":"r","confidence":0.5}"""));
+
+        Assert.Equal(MatchCategories.Strong, (await judge.JudgeAsync(Posting, Cv)).Category);
+    }
+
+    [Theory]
+    [InlineData("1.7", 1.0)]
+    [InlineData("-0.2", 0.0)]
+    [InlineData("0.3", 0.3)]
+    public async Task JudgeAsync_ConfidenceIsClampedToZeroOne(string raw, double expected)
+    {
+        var judge = new MatchStageTwoJudge(new MockLlmClient($$"""{"category":"Weak","reasoning":"r","confidence":{{raw}}}"""));
+
+        Assert.Equal(expected, (await judge.JudgeAsync(Posting, Cv)).Confidence);
+    }
+
+    [Fact]
+    public async Task JudgeAsync_LongReasoning_IsCapped()
+    {
+        var reasoning = new string('x', MatchStageTwoJudge.MaxReasoningLength * 3);
+        var judge = new MatchStageTwoJudge(new MockLlmClient($$"""{"category":"Weak","reasoning":"{{reasoning}}","confidence":0.5}"""));
+
+        Assert.Equal(MatchStageTwoJudge.MaxReasoningLength, (await judge.JudgeAsync(Posting, Cv)).Reasoning.Length);
+    }
+
+    [Fact]
+    public async Task JudgeAsync_FencedJson_IsParsed()
+    {
+        var judge = new MatchStageTwoJudge(new MockLlmClient("```json\n{\"category\":\"Borderline\",\"reasoning\":\"r\",\"confidence\":0.5}\n```"));
+
+        Assert.Equal(MatchCategories.Borderline, (await judge.JudgeAsync(Posting, Cv)).Category);
     }
 }

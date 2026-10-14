@@ -6,7 +6,7 @@
 
   <ItemGroup>
     <!-- sources.json lives in src/Config; the web host reads it from its output directory, like the CLI. -->
-    <None Include="..\Config\sources.json" Link="sources.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Jobbby.Core\Config\sources.json" Link="sources.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup>

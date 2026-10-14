@@ -103,7 +103,7 @@ public class GraphRunTests
     {
         public async Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default)
         {
-            await Task.Delay(10);
+            await Task.Delay(10, cancellationToken);
             state.TryGet<string>("owner", out var owner);
             return NodeResult.From("observedOwner", owner ?? string.Empty);
         }

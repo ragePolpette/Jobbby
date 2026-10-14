@@ -1,9 +1,8 @@
-using Microsoft.Extensions.Configuration;
 using CvExtraction;
 using GraphEngine;
 using Host.Nodes;
 using JobPostings;
-using Notifications;
+using Microsoft.Extensions.Configuration;
 using Reporting;
 using Xunit;
 
@@ -19,7 +18,6 @@ public class DryRunTests
             {
                 ["Jobbby:DryRun"] = "true",
                 ["Jobbby:DryRunMaxPostingsPerSource"] = "200",
-                ["Jobbby:DryRunMaxDiscoveryCandidates"] = "0",
             })
             .Build();
 
@@ -27,16 +25,14 @@ public class DryRunTests
 
         Assert.True(options.Enabled);
         Assert.Equal(20, options.MaxPostingsPerSource);
-        Assert.Equal(1, options.MaxDiscoveryCandidates);
     }
 
     [Fact]
-    public async Task Graph_DryRunStopsAfterEvaluationWithoutTelegramOrLedgerWrite()
+    public async Task Graph_DryRunComputesTheOutcomeWithoutLedgerWrite()
     {
         var ledgerPath = Path.Combine(Path.GetTempPath(), $"dry-run-ledger-{Guid.NewGuid():N}.json");
         try
         {
-            var gateway = new MockTelegramGateway();
             var cv = new CvData
             {
                 Name = "Candidate",
@@ -46,8 +42,6 @@ public class DryRunTests
             };
             var llm = new MockLlmClient("""{"category":"Strong","reasoning":"fit","confidence":0.95}""");
             var definition = HostGraph.Build(
-                gateway,
-                new PendingApprovalRegistry(),
                 new ApplicationLedger.ApplicationLedger(ledgerPath),
                 llm,
                 cv,
@@ -67,8 +61,7 @@ public class DryRunTests
             await definition.CreateRun().RunAsync(HostGraph.DedupeCheckNodeName, state);
 
             Assert.True(state.Get<bool>(ScoreMatchNode.StageOnePassedStateKey));
-            Assert.False(state.ContainsKey(RecordIfApprovedNode.OutcomeStateKey));
-            Assert.Empty(gateway.SentMessages);
+            Assert.Equal(ApplicationLedger.ApplicationOutcomes.Shortlisted, state.Get<string>(RecordOutcomeNode.OutcomeStateKey));
             Assert.False(File.Exists(ledgerPath));
         }
         finally

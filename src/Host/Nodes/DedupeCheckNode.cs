@@ -6,7 +6,7 @@ using Reporting;
 namespace Host.Nodes;
 
 /// <summary>
-/// Computes the dedup key from the normalized JobPosting's Company/Title and checks it
+/// Computes the dedup key from what the source reported (never from LLM output) and checks it
 /// against the <see cref="ApplicationLedger.ApplicationLedger"/>. Its edge routes
 /// straight to END when the key has already reached a terminal outcome - applied,
 /// rejected, or timed out - skipping approval entirely so a rejected posting isn't
@@ -30,10 +30,11 @@ public sealed class DedupeCheckNode : INode
 
     public Task<NodeResult> ExecuteAsync(GraphState state, CancellationToken cancellationToken = default)
     {
-        var jobPosting = state.Get<JobPosting>(NormalizeJobPostingNode.JobPostingStateKey);
-        var company = jobPosting?.Company ?? string.Empty;
-        var title = jobPosting?.Title ?? string.Empty;
-        var dedupeKey = PostingIdentity.Key(company, title, _extraCompanySuffixes, jobPosting?.ApplyUrl);
+        var raw = state.Get<RawPosting>(NormalizeJobPostingNode.RawPostingStateKey);
+        var jobPosting = raw is null ? state.Get<JobPosting>(NormalizeJobPostingNode.JobPostingStateKey) : null;
+        var dedupeKey = raw is not null
+            ? PostingIdentity.Key(raw.Company, raw.RawTitle, _extraCompanySuffixes, raw.ApplyUrl, raw.SourceId)
+            : PostingIdentity.Key(jobPosting?.Company ?? string.Empty, jobPosting?.Title ?? string.Empty, _extraCompanySuffixes, jobPosting?.ApplyUrl);
 
         var alreadyProcessed = _ledger.HasBeenProcessed(dedupeKey);
 

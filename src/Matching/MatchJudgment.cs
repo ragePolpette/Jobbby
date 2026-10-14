@@ -13,4 +13,13 @@ public static class MatchCategories
     public const string Strong = "Strong";
     public const string Borderline = "Borderline";
     public const string Weak = "Weak";
+
+    /// <summary>The canonical spelling of a category, ignoring case and surrounding spaces; null when it is none of them.</summary>
+    public static string? Parse(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "strong" => Strong,
+        "borderline" => Borderline,
+        "weak" => Weak,
+        _ => null,
+    };
 }

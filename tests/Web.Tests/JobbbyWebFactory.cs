@@ -95,7 +95,7 @@ public sealed class PromptRoutedLlm(Func<CancellationToken, Task>? onExtraction 
 {
     public async Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default)
     {
-        if (prompt.Contains("Estrai le seguenti informazioni", StringComparison.Ordinal))
+        if (prompt.Contains("Extract the following information", StringComparison.Ordinal))
         {
             if (onExtraction is not null)
                 await onExtraction(cancellationToken);

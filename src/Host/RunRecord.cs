@@ -30,6 +30,8 @@ public enum PostingStatus
 public sealed record QueryRecord(string Source, string Query, string Sweep, int Returned, int DroppedByPrefilter, string? Error);
 
 /// <param name="Record">The full evaluation (the same shape the ledger stores), when there is one.</param>
+/// <param name="SourceCompany">The company as the source reported it, before any LLM fallback.</param>
+/// <param name="SourceId">The source's own id of the ad, when it has one.</param>
 public sealed record RunPosting(
     string PostingId,
     string Title,
@@ -40,7 +42,9 @@ public sealed record RunPosting(
     PostingStatus Status,
     string? Summary,
     ApplicationRecord? Record,
-    string? Error);
+    string? Error,
+    string? SourceCompany = null,
+    string? SourceId = null);
 
 /// <summary>
 /// Everything about one run, persisted as <c>DataDir/runs/&lt;RunId&gt;.json</c> for dry and
@@ -55,7 +59,7 @@ public sealed record RunRecord
     public RunStatus Status { get; init; }
     public DateTimeOffset StartedAt { get; init; }
     public DateTimeOffset? EndedAt { get; init; }
-    public JobbbySettings Settings { get; init; } = JobbbySettings.Default;
+    public RunSettingsSnapshot Settings { get; init; } = new();
     public AreaSettings? Area { get; init; }
     public List<string> Queries { get; init; } = new();
     public int AdzunaCalls { get; init; }

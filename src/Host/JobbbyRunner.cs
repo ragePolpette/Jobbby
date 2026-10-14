@@ -6,7 +6,6 @@ using GraphEngine;
 using Host.Nodes;
 using JobPostings;
 using Matching;
-using Notifications;
 using Reporting;
 
 namespace Host;
@@ -27,8 +26,9 @@ public sealed record RunEvent(string Kind, string Message, DateTimeOffset At);
 /// The process's single ledger for the given company suffixes (the web host shares one with its
 /// decision APIs); null = open the DataDir's ledger for this run.
 /// </param>
+/// <param name="Language">The language the prompts are written in.</param>
 public sealed record RunDependencies(IJobSource JobSource, ILlmClient Llm, IReadOnlyList<SourceDefinition> Sources,
-    Func<IReadOnlyList<string>, ApplicationLedger.ApplicationLedger>? Ledger = null);
+    Func<IReadOnlyList<string>, ApplicationLedger.ApplicationLedger>? Ledger = null, PromptLanguage Language = PromptLanguage.English);
 
 /// <param name="Area">The area actually searched (settings plus the CV location when enabled).</param>
 /// <param name="RunPath">The run's file in <c>DataDir/runs/</c>.</param>
@@ -40,7 +40,7 @@ public sealed record RunSummary(string RunId, RunReport Report, int AdzunaCalls,
 /// decided, evaluate the others through <see cref="HostGraph"/> and give each an outcome. Every
 /// run, dry or normal, is recorded in <c>DataDir/runs/</c>; normal runs also write the ledger and
 /// the cursors. Cancellation stops LLM calls in flight, marks the run Interrupted and saves no
-/// cursors. Discovery is not part of a run.
+/// cursors.
 /// </summary>
 public sealed class JobbbyRunner
 {
@@ -48,14 +48,12 @@ public sealed class JobbbyRunner
 
     private readonly DataDir _dataDir;
     private readonly RunDependencies _deps;
-    private readonly bool _discoveryConfigured;
     private readonly RunStore _runs;
 
-    public JobbbyRunner(DataDir dataDir, RunDependencies deps, bool discoveryConfigured = false)
+    public JobbbyRunner(DataDir dataDir, RunDependencies deps)
     {
         _dataDir = dataDir;
         _deps = deps;
-        _discoveryConfigured = discoveryConfigured;
         _runs = new RunStore(dataDir);
     }
 
@@ -77,7 +75,7 @@ public sealed class JobbbyRunner
             Mode = mode == RunMode.Dry ? "dry" : "normal",
             Status = RunStatus.Running,
             StartedAt = runAt,
-            Settings = settings,
+            Settings = RunSettingsSnapshot.From(settings),
         };
         _runs.Save(run);
 
@@ -103,9 +101,6 @@ public sealed class JobbbyRunner
             warnings.Add(message);
             Report("warning", message);
         }
-
-        if (_discoveryConfigured)
-            Warn("Discovery configurata ma non eseguita: non fa parte delle run.");
 
         var skillAliases = SkillAliases.Load(_dataDir.SkillAliasesPath);
         var resolved = AreaResolver.Resolve(settings.Area, cv);
@@ -148,6 +143,7 @@ public sealed class JobbbyRunner
                 },
                 cv,
                 _deps.Llm,
+                _deps.Language,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -166,11 +162,10 @@ public sealed class JobbbyRunner
         var suffixes = settings.Dedupe.ExtraCompanySuffixes;
         // Dry runs read the real history (dedupe) but never write it: RecordOutcomeNode skips the write.
         var ledger = _deps.Ledger?.Invoke(suffixes) ?? new ApplicationLedger.ApplicationLedger(_dataDir.ApplicationsPath, suffixes);
+        using var ledgerBatch = ledger.BeginBatch();
         var history = ledger;
         // No approval channel: postings below the threshold are recorded as Pending and wait for the user.
         var definition = HostGraph.Build(
-            null,
-            new PendingApprovalRegistry(),
             ledger,
             _deps.Llm,
             cv,
@@ -178,7 +173,8 @@ public sealed class JobbbyRunner
             confidenceThreshold: settings.Evaluation.AutoApproveThreshold,
             dryRun: mode == RunMode.Dry,
             stageOneCriteria: StageOneCriteria.FromSettings(area, settings.Salary, skillAliases),
-            extraCompanySuffixes: suffixes);
+            extraCompanySuffixes: suffixes,
+            language: _deps.Language);
         var remoteFilter = new RemoteKeywordFilter(settings.RemoteSweep.AllKeywords());
         if (area.AcceptsRemote && remoteFilter.IsEmpty && !string.IsNullOrWhiteSpace(area.Where))
             Warn("Remoto accettato ma nessuna parola chiave configurata: la ricerca remota fuori zona è disattivata.");
@@ -191,8 +187,8 @@ public sealed class JobbbyRunner
             {
                 var fetch = await MultiQueryFetcher.FetchAsync(
                     _deps.JobSource, source, plan.Queries, country, area, remoteFilter, cursors,
-                    mode == RunMode.Dry ? settings.DryRun.MaxPostingsPerQuery : null, run.StartedAt, cancellationToken,
-                    suffixes).ConfigureAwait(false);
+                    mode == RunMode.Dry ? settings.DryRun.MaxPostingsPerQuery : null, run.StartedAt,
+                    suffixes, cancellationToken).ConfigureAwait(false);
                 adzunaCalls += fetch.AdzunaCalls;
                 var localQueries = fetch.Queries.Where(query => query.Sweep == SearchSweep.Local).ToList();
                 if (resolved.FromCv && localQueries.Count > 0 && localQueries.All(query => query.Error is null && query.Returned == 0))
@@ -216,12 +212,12 @@ public sealed class JobbbyRunner
                 var evaluations = new List<Task>();
                 foreach (var posting in fetch.Postings)
                 {
-                    var key = PostingIdentity.Key(posting.Company, posting.RawTitle, suffixes, posting.ApplyUrl);
+                    var key = PostingIdentity.Key(posting.Company, posting.RawTitle, suffixes, posting.ApplyUrl, posting.SourceId);
                     var slot = new RunPosting(PostingIdentity.Id(key), posting.RawTitle, posting.Company, posting.ApplyUrl, source.Name,
-                        posting.Sweep.ToString(), PostingStatus.Interrupted, null, null, null);
+                        posting.Sweep.ToString(), PostingStatus.Interrupted, null, null, null, posting.Company, posting.SourceId);
 
                     // Already decided in an earlier run: skip before normalization, which costs an LLM call.
-                    if (!string.IsNullOrWhiteSpace(posting.Company) && history.HasBeenProcessed(key))
+                    if (history.HasBeenProcessed(key))
                     {
                         stats.IncrementSkippedDuplicate();
                         Add(postings, slot with { Status = PostingStatus.Skipped, Summary = "già visto in una run precedente" });

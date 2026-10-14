@@ -28,6 +28,52 @@ public class JobbbyRunnerTests
     }
 
     [Fact]
+    public async Task NormalRun_WritesTheLedgerInBatches_AndEverythingByTheEnd()
+    {
+        using var tmp = new TempDir();
+        var dataDir = new DataDir(tmp.Root);
+        var postings = Enumerable.Range(1, 5).Select(i => Posting($"Nurse {i}", $"https://x/{i}")).ToArray();
+        ApplicationLedger.ApplicationLedger? ledger = null;
+        var deps = Deps(new MockJobSource(_ => postings)) with
+        {
+            Ledger = suffixes => ledger ??= new ApplicationLedger.ApplicationLedger(dataDir.ApplicationsPath, suffixes),
+        };
+
+        await new JobbbyRunner(dataDir, deps).RunAsync(Settings(), Cv(), RunMode.Normal, new Progress<RunEvent>(), CancellationToken.None);
+
+        Assert.Equal(1, ledger!.WriteCount);
+        Assert.Equal(5, new ApplicationLedger.ApplicationLedger(dataDir.ApplicationsPath).Pending().Count);
+    }
+
+    [Fact]
+    public async Task InterruptedRun_StillWritesTheOutcomesAlreadyReached()
+    {
+        using var tmp = new TempDir();
+        var dataDir = new DataDir(tmp.Root);
+        using var cancellation = new CancellationTokenSource();
+        var source = new MockJobSource(request => request.Query == "nurse"
+            ? new[] { Posting("Nurse", "https://x/1") }
+            : new[] { Posting("Midwife", "https://x/2") });
+        var llm = new FuncLlm(async (prompt, token) =>
+        {
+            if (prompt.Contains("Midwife", StringComparison.Ordinal))
+            {
+                cancellation.Cancel();
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            }
+
+            return prompt.Contains("Extract the following information", StringComparison.Ordinal)
+                ? """{"seniorityLevel":"","requiredSkills":["Triage"],"workMode":"onsite"}"""
+                : """{"category":"Borderline","reasoning":"r","confidence":0.5}""";
+        });
+        var settings = Settings() with { Searches = Settings().Searches with { Queries = new() { "nurse", "midwife" } } };
+        var summary = await new JobbbyRunner(dataDir, Deps(source, llm)).RunAsync(settings, Cv(), RunMode.Normal, new Progress<RunEvent>(), cancellation.Token);
+
+        Assert.True(summary.Cancelled);
+        Assert.NotEmpty(new ApplicationLedger.ApplicationLedger(dataDir.ApplicationsPath).Pending());
+    }
+
+    [Fact]
     public async Task Run_UsesAreaAndRemoteSweepFromSettings()
     {
         using var tmp = new TempDir();
@@ -180,17 +226,6 @@ public class JobbbyRunnerTests
     }
 
     [Fact]
-    public async Task Run_DiscoveryConfigured_IsIgnoredWithWarning()
-    {
-        using var tmp = new TempDir();
-        var runner = new JobbbyRunner(new DataDir(tmp.Root), Deps(new MockJobSource(_ => Array.Empty<RawPosting>())), discoveryConfigured: true);
-
-        var summary = await runner.RunAsync(Settings(), Cv(), RunMode.Dry, new Progress<RunEvent>(), CancellationToken.None);
-
-        Assert.Contains(summary.Warnings, w => w.Contains("Discovery"));
-    }
-
-    [Fact]
     public async Task Run_ReportsProgressEvents()
     {
         using var tmp = new TempDir();
@@ -233,8 +268,8 @@ public class JobbbyRunnerTests
         public async Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref Calls);
-            // Normalization is the only prompt asking to extract fields; stage two also carries <annuncio>.
-            if (prompt.Contains("Estrai le seguenti informazioni", StringComparison.Ordinal))
+            // Normalization is the only prompt asking to extract fields; stage two also carries <posting>.
+            if (prompt.Contains("Extract the following information", StringComparison.Ordinal))
             {
                 onExtraction?.Invoke();
                 if (blockAfterCallback)
@@ -244,6 +279,11 @@ public class JobbbyRunnerTests
 
             return judgment;
         }
+    }
+
+    private sealed class FuncLlm(Func<string, CancellationToken, Task<string>> respond) : ILlmClient
+    {
+        public Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default) => respond(prompt, cancellationToken);
     }
 
     private sealed class BlockingLlm(Action onCall) : ILlmClient

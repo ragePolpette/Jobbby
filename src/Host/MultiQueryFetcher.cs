@@ -45,8 +45,8 @@ public static class MultiQueryFetcher
         IReadOnlyDictionary<string, SourceCursor> cursors,
         int? postingLimitPerQuery,
         DateTimeOffset runAt,
-        CancellationToken cancellationToken = default,
-        IEnumerable<string>? extraCompanySuffixes = null)
+        IEnumerable<string>? extraCompanySuffixes = null,
+        CancellationToken cancellationToken = default)
     {
         var suffixes = extraCompanySuffixes?.ToList();
         var merged = new List<RawPosting>();
@@ -92,7 +92,7 @@ public static class MultiQueryFetcher
 
                     // Both keys are always recorded: the same ad under another URL, or a reposted
                     // ad (new id, "Acme S.r.l" vs "ACME SRL") under the same URL, is still one posting.
-                    var urlSeen = !string.IsNullOrWhiteSpace(posting.ApplyUrl) && !seen.Add("url:" + posting.ApplyUrl);
+                    var urlSeen = !string.IsNullOrWhiteSpace(posting.ApplyUrl) && !seen.Add("url:" + PostingIdentity.NormalizeUrl(posting.ApplyUrl));
                     // Without a company the title alone would merge unrelated employers' ads.
                     var titleSeen = PostingIdentity.NormalizeCompany(posting.Company, suffixes).Length > 0
                         && !seen.Add("job:" + PostingIdentity.Key(posting.Company, posting.RawTitle, suffixes));

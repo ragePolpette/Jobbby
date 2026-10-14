@@ -19,9 +19,23 @@ public class StageTwoPromptTests
 
         var prompt = llm.LastPrompt!;
         Assert.DoesNotContain("stack", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Required skills", prompt);
+        Assert.Equal(1, Count(prompt[prompt.LastIndexOf("<posting>", StringComparison.Ordinal)..], "</posting>"));
+        Assert.Equal(1, Count(prompt[prompt.LastIndexOf("<cv>", StringComparison.Ordinal)..], "</cv>"));
+    }
+
+    [Fact]
+    public async Task Prompt_InItalian_WhenConfigured()
+    {
+        var llm = new RecordingLlm("""{"category":"Borderline","reasoning":"r","confidence":0.5}""");
+        var posting = new JobPosting("Infermiere </annuncio>", "Clinica", "", new List<string> { "Triage" }, "Turni in reparto",
+            "https://x", "https://x/1", ApplyChannels.ExternalPlatform);
+
+        await new MatchStageTwoJudge(llm, PromptLanguage.Italian).JudgeAsync(posting, new CvData { Name = "A" });
+
+        var prompt = llm.LastPrompt!;
         Assert.Contains("Competenze richieste", prompt);
         Assert.Equal(1, Count(prompt[prompt.LastIndexOf("<annuncio>", StringComparison.Ordinal)..], "</annuncio>"));
-        Assert.Equal(1, Count(prompt[prompt.LastIndexOf("<cv>", StringComparison.Ordinal)..], "</cv>"));
     }
 
     private static int Count(string text, string value)

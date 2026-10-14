@@ -4,8 +4,9 @@
 
 ## Testing
 
-- [ ] `dotnet build GraphEngine.sln`
-- [ ] `dotnet test GraphEngine.sln`
+- [ ] `dotnet build Jobbby.sln`
+- [ ] `dotnet test Jobbby.sln`
+- [ ] `dotnet format Jobbby.sln --verify-no-changes`
 
 ## Checklist
 

@@ -108,7 +108,9 @@ public static class RunsApi
             var ledger = ledgers.Get(suffixes);
             var postings = run.Postings.Select(posting =>
             {
-                var id = PostingIdentity.Id(PostingIdentity.Key(posting.Record?.Company ?? posting.Company, posting.Record?.Title ?? posting.Title, suffixes, posting.ApplyUrl));
+                var company = posting.Record is { } record ? record.SourceCompany ?? record.Company : posting.SourceCompany ?? posting.Company;
+                var sourceId = posting.Record?.SourcePostingId ?? posting.SourceId;
+                var id = PostingIdentity.Id(PostingIdentity.Key(company, posting.Record?.Title ?? posting.Title, suffixes, posting.ApplyUrl, sourceId));
                 var current = ledger.Current(id);
                 return new { posting, currentPostingId = current?.PostingId, currentOutcome = current?.Outcome, currentRecord = current };
             });

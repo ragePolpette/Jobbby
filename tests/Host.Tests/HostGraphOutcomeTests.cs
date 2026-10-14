@@ -5,7 +5,6 @@ using GraphEngine;
 using Host.Nodes;
 using JobPostings;
 using Matching;
-using Notifications;
 using Reporting;
 using Xunit;
 
@@ -117,7 +116,7 @@ public class HostGraphOutcomeTests
         ledgerPath ??= Path.Combine(Path.GetTempPath(), $"applications-{Guid.NewGuid():N}.json");
         var ledger = new ApplicationLedger.ApplicationLedger(ledgerPath);
         var stats = new RunStatsCollector();
-        var definition = HostGraph.Build(null, new PendingApprovalRegistry(), ledger, llm, Cv, stats, dryRun: dryRun, stageOneCriteria: criteria);
+        var definition = HostGraph.Build(ledger, llm, Cv, stats, dryRun: dryRun, stageOneCriteria: criteria);
         var state = new GraphState(new Dictionary<string, object>
         {
             [NormalizeJobPostingNode.JobPostingStateKey] = posting,

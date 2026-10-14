@@ -246,6 +246,34 @@ public class MultiQueryFetcherTests
         Assert.Equal(5, new[] { a, b, c, d, e }.Distinct().Count());
     }
 
+    [Fact]
+    public async Task FetchAsync_FailingQuery_KeepsThePreviousCursor()
+    {
+        var key = MultiQueryFetcher.CursorKey(Adzuna, "it", NoArea, SearchSweep.Local, "nurse");
+        var previous = new SourceCursor(key, "https://jobs.example/old", RunAt.AddDays(-3));
+        var jobSource = new MockJobSource(_ => throw new JobSourceException("Adzuna responded with HTTP 503.", System.Net.HttpStatusCode.ServiceUnavailable, isTransient: true));
+
+        var result = await Fetch(jobSource, new[] { "nurse" }, cursors: new Dictionary<string, SourceCursor> { [key] = previous });
+
+        var outcome = Assert.Single(result.Queries);
+        Assert.Same(previous, outcome.Cursor);
+        Assert.Equal("Adzuna responded with HTTP 503.", outcome.Error);
+    }
+
+    [Fact]
+    public async Task FetchAsync_SameAdUnderTrackingVariantsOfTheLink_IsKeptOnce()
+    {
+        var jobSource = new MockJobSource(_ => new[]
+        {
+            Posting("Nurse", "https://www.adzuna.it/land/ad/1/", company: ""),
+            Posting("Nurse", "https://WWW.adzuna.it/land/ad/1#apply", company: ""),
+        });
+
+        var result = await Fetch(jobSource, new[] { "nurse" });
+
+        Assert.Single(result.Postings);
+    }
+
     private static Task<SourceFetchResult> Fetch(
         IJobSource jobSource,
         IReadOnlyList<string> queries,

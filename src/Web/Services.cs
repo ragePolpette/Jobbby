@@ -18,19 +18,20 @@ public sealed class DefaultRunDependenciesFactory(IConfiguration configuration, 
 {
     public RunDependencies Create(JobbbySettings settings, RunMode mode, Func<IReadOnlyList<string>, ApplicationLedger.ApplicationLedger> ledger)
     {
-        var http = httpClients.CreateClient("jobbby");
+        var http = httpClients.CreateClient(JobbbyWeb.HttpClientName);
         var llm = LlmClientFactory.Create(settings.Llm, configuration, http);
-        var source = AdzunaJobSource.FromEnvironment(
+        var source = AdzunaJobSource.FromConfiguration(
             http,
+            configuration,
             settings.Area.Country!,
             resultsPerPage: mode == RunMode.Dry ? settings.DryRun.MaxPostingsPerQuery : 10,
             minimumPlausibleSalary: settings.Salary.MinimumPlausible);
         var sources = SourceWhitelist.LoadFromFile(Path.Combine(AppContext.BaseDirectory, "sources.json"));
-        return new RunDependencies(source, llm.Client, sources, ledger);
+        return new RunDependencies(source, llm.Client, sources, ledger, llm.Language);
     }
 
     public GraphEngine.ILlmClient CreateLlm(JobbbySettings settings) =>
-        LlmClientFactory.Create(settings.Llm, configuration, httpClients.CreateClient("jobbby")).Client;
+        LlmClientFactory.Create(settings.Llm, configuration, httpClients.CreateClient(JobbbyWeb.HttpClientName)).Client;
 }
 
 /// <summary>
